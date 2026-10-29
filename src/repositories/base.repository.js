@@ -1,8 +1,7 @@
-// src/repositories/base.repository.js
-const { ObjectId } = require('mongodb');
-const Database = require('../config/database');
+import { ObjectId } from 'mongodb';
+import Database from '../config/database.js';
 
-class BaseRepository {
+export default class BaseRepository {
     constructor(collectionName) {
         this.collectionName = collectionName;
     }
@@ -48,5 +47,3 @@ class BaseRepository {
         return result.deletedCount > 0;
     }
 }
-
-module.exports = BaseRepository;
