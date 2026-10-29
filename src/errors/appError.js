@@ -1,5 +1,3 @@
-// src/errors/appError.js
-
 /**
  * Clase base para todas las excepciones operacionales controladas del sistema (SRP & OCP).
  * Hereda de la clase nativa Error de JavaScript.
