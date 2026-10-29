@@ -1,4 +1,3 @@
-// src/services/student.service.js
 import studentRepositoryInstance from '../repositories/student.repository.js';
 import StudentResponseDTO from '../dtos/student/studentResponse.dto.js';
 import BadRequestError from '../errors/badRequestError.js';
