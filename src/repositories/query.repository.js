@@ -1,8 +1,8 @@
 // src/repositories/query.repository.js
-const { ObjectId } = require('mongodb');
-const BaseRepository = require('./base.repository');
+import { ObjectId } from 'mongodb';
+import BaseRepository from './base.repository.js';
 
-class QueryRepository extends BaseRepository {
+export class QueryRepository extends BaseRepository {
     constructor() {
         super('queries');
     }
@@ -41,4 +41,4 @@ class QueryRepository extends BaseRepository {
     }
 }
 
-module.exports = new QueryRepository();
+export default new QueryRepository();
