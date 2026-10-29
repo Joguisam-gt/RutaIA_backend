@@ -1,8 +1,8 @@
 // src/repositories/course.repository.js
-const { ObjectId } = require('mongodb');
-const BaseRepository = require('./base.repository');
+import { ObjectId } from 'mongodb';
+import BaseRepository from './base.repository.js';
 
-class CourseRepository extends BaseRepository {
+export class CourseRepository extends BaseRepository {
     constructor() {
         super('courses');
     }
@@ -57,4 +57,4 @@ class CourseRepository extends BaseRepository {
     }
 }
 
-module.exports = new CourseRepository();
+export default new CourseRepository();
