@@ -1,0 +1,79 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "studentId",
+            "userQuery",
+            "status"
+        ],
+        "properties": {
+            "_id": {
+                "bsonType": "objectId"
+            },
+            "studentId": {
+                "bsonType": "objectId",
+                "description": "Referencia obligatoria en formato ObjectId al estudiante."
+            },
+            "userQuery": {
+                "bsonType": "string",
+                "minLength": 3,
+                "description": "La pregunta formulada a la IA debe tener al menos 3 caracteres."
+            },
+            "category": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ]
+            },
+            "status": {
+                "enum": [
+                    "PENDIENTE",
+                    "RESPONDIDA",
+                    "SIN_RESULTADOS",
+                    "ERROR"
+                ],
+                "description": "Estado del ciclo de procesamiento en n8n."
+            },
+            "aiResponse": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ]
+            },
+            "vectorSources": {
+                "bsonType": "array",
+                "items": {
+                    "bsonType": "object"
+                }
+            },
+            "similarityScore": {
+                "bsonType": [
+                    "double",
+                    "int",
+                    "null"
+                ]
+            },
+            "recommendedCourseIds": {
+                "bsonType": "array",
+                "items": {
+                    "bsonType": [
+                        "string",
+                        "objectId"
+                    ]
+                }
+            },
+            "errorMessage": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ]
+            },
+            "createdAt": {
+                "bsonType": "date"
+            },
+            "updatedAt": {
+                "bsonType": "date"
+            }
+        }
+    }
+}
