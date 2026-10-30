@@ -1,6 +1,8 @@
-import { ObjectId } from 'mongodb';
 import Database from '../config/database.js';
 
+/**
+ * Repositorio base abstracto con soporte para transacciones ACID y ClientSession (OCP & DIP).
+ */
 export default class BaseRepository {
     constructor(collectionName) {
         this.collectionName = collectionName;
@@ -10,40 +12,35 @@ export default class BaseRepository {
         return Database.getDb().collection(this.collectionName);
     }
 
-    async findById(id) {
-        return await this.collection.findOne({ _id: new ObjectId(id) });
-    }
-
-    async find(filter = {}, options = {}) {
-        return await this.collection.find(filter, options).toArray();
-    }
-
-    async create(data) {
+    /**
+     * Inserta un documento con soporte para sesión transaccional.
+     */
+    async create(data, options = {}) {
         const document = {
             ...data,
             createdAt: new Date(),
             updatedAt: new Date()
         };
-        const result = await this.collection.insertOne(document);
+        const result = await this.collection.insertOne(document, options);
         return { _id: result.insertedId, ...document };
     }
 
-    async updateById(id, updateData) {
-        const result = await this.collection.findOneAndUpdate(
-            { _id: new ObjectId(id) },
-            {
-                $set: {
-                    ...updateData,
-                    updatedAt: new Date()
-                }
-            },
-            { returnDocument: 'after' }
-        );
-        return result;
+    /**
+     * Busca un documento por filtro con soporte para sesión transaccional.
+     */
+    async findOne(filter, options = {}) {
+        return await this.collection.findOne(filter, options);
     }
 
-    async deleteById(id) {
-        const result = await this.collection.deleteOne({ _id: new ObjectId(id) });
-        return result.deletedCount > 0;
+    /**
+     * Actualiza un documento con soporte para sesión transaccional.
+     */
+    async update(id, updateData, options = {}) {
+        const result = await this.collection.findOneAndUpdate(
+            { _id: id },
+            { $set: { ...updateData, updatedAt: new Date() } },
+            { returnDocument: 'after', ...options }
+        );
+        return result;
     }
 }
