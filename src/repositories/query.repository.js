@@ -20,7 +20,6 @@ export class QueryRepository extends BaseRepository {
 
     /**
      * Cuenta el total de consultas realizadas a la IA.
-     * @returns {Promise<number>}
      */
     async countTotalQueries() {
         return await this.collection.countDocuments({});
@@ -28,7 +27,6 @@ export class QueryRepository extends BaseRepository {
 
     /**
      * Ejecuta la agregación para desglosar interacciones por estado (PENDIENTE, RESPONDIDA, etc.).
-     * @returns {Promise<Array<{_id: string, count: number}>>}
      */
     async getStatusBreakdown() {
         const pipeline = [
@@ -91,6 +89,53 @@ export class QueryRepository extends BaseRepository {
         ];
 
         return await this.collection.aggregate(pipeline).toArray();
+    }
+
+    /**
+     * Almacena la calificación y comentario del estudiante sobre la interacción con la IA.
+     * ID de la interacción/pregunta.
+     * ID del estudiante.
+     * Objeto con score, comment y timestamp.
+     */
+    async addAIRating(queryId, studentId, ratingData) {
+        return await this.collection.findOneAndUpdate(
+            { _id: queryId, studentId },
+            { 
+                $set: { 
+                    aiRating: {
+                        score: ratingData.score,
+                        comment: ratingData.comment,
+                        createdAt: new Date()
+                    },
+                    updatedAt: new Date()
+                } 
+            },
+            { returnDocument: 'after' }
+        );
+    }
+
+    /**
+     * Obtiene el listado de interacciones calificadas incluyendo la pregunta y respuesta (chat) para el Administrador.
+     * Límite de registros.
+     * Página actual.
+     */
+    async findAllAIRatingsWithChat(limit = 20, page = 1) {
+        const skip = (page - 1) * limit;
+        return await this.collection
+            .find({ aiRating: { $exists: true } })
+            .project({
+                _id: 1,
+                studentId: 1,
+                question: 1,
+                answer: 1,
+                recommendedCourses: 1,
+                aiRating: 1,
+                createdAt: 1
+            })
+            .sort({ 'aiRating.createdAt': -1 })
+            .skip(skip)
+            .limit(limit)
+            .toArray();
     }
 }
 
