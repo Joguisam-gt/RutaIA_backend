@@ -1,59 +1,33 @@
+// src/routes/student.routes.js
 import { Router } from 'express';
-import multer from 'multer';
-import CourseController from '../controllers/course.controller.js';
+import StudentController from '../controllers/student.controller.js';
 import ValidatorMiddleware from '../middlewares/validator.middleware.js';
-import CreateCourseDTO from '../dtos/course/createCourse.dto.js';
-import UpdateCourseDTO from '../dtos/course/updateCourse.dto.js';
+import CreateStudentDTO from '../dtos/student/createStudent.dto.js';
 import AuthMiddleware from '../middlewares/auth.middleware.js';
 
 const router = Router();
-const courseController = new CourseController();
+const studentController = new StudentController();
 
-// Configuración de Multer para parsear PDFs en memoria
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 15 * 1024 * 1024 } // Máximo 15MB por PDF
-});
-
-// Crear curso y subir PDF a n8n (exclusivo Administrador)
+// Registro público de estudiante
 router.post(
+    '/',
+    ValidatorMiddleware.validate(CreateStudentDTO),
+    studentController.register
+);
+
+// Obtener perfil del estudiante autenticado
+router.get(
+    '/profile',
+    AuthMiddleware.authenticate,
+    studentController.getProfile
+);
+
+// Listar todos los estudiantes (exclusivo Administrador)
+router.get(
     '/',
     AuthMiddleware.authenticate,
     AuthMiddleware.authorize('admin'),
-    upload.single('pdf'),
-    ValidatorMiddleware.validate(CreateCourseDTO),
-    courseController.createCourse
-);
-
-// Listar catálogo de cursos (Estudiantes y Administrador)
-router.get('/', courseController.getCourses);
-
-// Obtener detalle de un curso
-router.get('/:id', courseController.getCourseById);
-
-// Actualizar información parcial de un curso (exclusivo Administrador)
-router.put(
-    '/:id',
-    AuthMiddleware.authenticate,
-    AuthMiddleware.authorize('admin'),
-    ValidatorMiddleware.validate(UpdateCourseDTO),
-    courseController.updateCourse
-);
-
-// Alternar estado de visibilidad del curso (exclusivo Administrador)
-router.patch(
-    '/:id/visibility',
-    AuthMiddleware.authenticate,
-    AuthMiddleware.authorize('admin'),
-    courseController.toggleVisibility
-);
-
-// Eliminar un curso (exclusivo Administrador)
-router.delete(
-    '/:id',
-    AuthMiddleware.authenticate,
-    AuthMiddleware.authorize('admin'),
-    courseController.deleteCourse
+    studentController.getAllStudents
 );
 
 export default router;
