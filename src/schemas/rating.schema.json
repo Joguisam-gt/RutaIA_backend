@@ -1,0 +1,33 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "courseId",
+            "studentId",
+            "score"
+        ],
+        "properties": {
+            "_id": {
+                "bsonType": "objectId"
+            },
+            "courseId": {
+                "bsonType": "objectId"
+            },
+            "studentId": {
+                "bsonType": "objectId"
+            },
+            "score": {
+                "bsonType": "int",
+                "minimum": 1,
+                "maximum": 5,
+                "description": "La puntuación debe ser un entero entre 1 y 5."
+            },
+            "comment": {
+                "bsonType": "string"
+            },
+            "createdAt": {
+                "bsonType": "date"
+            }
+        }
+    }
+}
