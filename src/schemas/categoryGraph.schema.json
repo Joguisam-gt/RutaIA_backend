@@ -1,0 +1,44 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "name"
+        ],
+        "properties": {
+            "_id": {
+                "bsonType": "objectId"
+            },
+            "name": {
+                "bsonType": "string",
+                "minLength": 2,
+                "description": "Nombre del nodo o categoría del grafo."
+            },
+            "description": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ]
+            },
+            "parentId": {
+                "bsonType": [
+                    "objectId",
+                    "null"
+                ],
+                "description": "Referencia al nodo padre (nulo si es nodo raíz)."
+            },
+            "courseIds": {
+                "bsonType": "array",
+                "items": {
+                    "bsonType": "objectId"
+                }
+            },
+            "createdAt": {
+                "bsonType": "date"
+            },
+            "updatedAt": {
+                "bsonType": "date"
+            }
+        }
+    }
+}
+
