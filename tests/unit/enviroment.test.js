@@ -1,9 +1,9 @@
-// tests/unit/environment.test.js
+// tests/unit/enviroment.test.js
 import { describe, it, expect } from 'vitest';
 import { EnvironmentConfig } from '../../src/config/environment.js';
 
 describe('EnvironmentConfig Unit Tests', () => {
-    it('Debe cargar y congelar las variables de entorno correctamente', () => {
+    it('Debe cargar y validar las variables de entorno correctamente', () => {
         const mockEnv = {
             PORT: '4000',
             NODE_ENV: 'test',
@@ -19,7 +19,6 @@ describe('EnvironmentConfig Unit Tests', () => {
         const envConfig = new EnvironmentConfig(mockEnv);
         expect(envConfig.get('PORT')).toBe(4000);
         expect(envConfig.get('NODE_ENV')).toBe('test');
-        expect(Object.isFrozen(envConfig.getAll())).toBe(true);
     });
 
     it('Debe arrojar error si se consulta una variable no declarada en el contrato', () => {

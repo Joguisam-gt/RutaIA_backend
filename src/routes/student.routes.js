@@ -1,8 +1,7 @@
-// src/routes/student.routes.js
 import { Router } from 'express';
 import StudentController from '../controllers/student.controller.js';
 import ValidatorMiddleware from '../middlewares/validator.middleware.js';
-import CreateStudentDTO from '../dtos/student/createStudent.dto.js';
+import CreateStudentDTO from '../dtos/students/createStudent.dto.js';
 import AuthMiddleware from '../middlewares/auth.middleware.js';
 
 const router = Router();
