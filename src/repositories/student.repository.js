@@ -1,5 +1,8 @@
 import BaseRepository from './base.repository.js';
 
+/**
+ * Repositorio encargado de la persistencia y consultas de usuarios/estudiantes.
+ */
 export class StudentRepository extends BaseRepository {
     constructor() {
         super('users');
@@ -9,19 +12,23 @@ export class StudentRepository extends BaseRepository {
         return await this.collection.findOne({ email: email.toLowerCase().trim() });
     }
 
-    async updateRole(userId, newRole) {
-        return await this.updateById(userId, { role: newRole });
-    }
-
     async findAllStudents(limit = 20, page = 1) {
         const skip = (page - 1) * limit;
         return await this.collection
-            .find({ role: 'student' }, { projection: { password: 0 } })
-            .sort({ createdAt: -1 })
+            .find({ role: 'student' })
             .skip(skip)
             .limit(limit)
             .toArray();
     }
+
+    /**
+     * Cuenta el total de estudiantes por su rol en la plataforma.
+     * Rol a filtrar (ej. 'student').
+     */
+    async countByRole(role = 'student') {
+        return await this.collection.countDocuments({ role });
+    }
 }
 
-export default new StudentRepository();
+const studentRepositoryInstance = new StudentRepository();
+export default studentRepositoryInstance;

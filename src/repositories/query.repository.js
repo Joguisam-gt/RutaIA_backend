@@ -1,19 +1,17 @@
-// src/repositories/query.repository.js
-import { ObjectId } from 'mongodb';
 import BaseRepository from './base.repository.js';
 
+/**
+ * Repositorio encargado de gestionar el almacenamiento e historial de consultas a la IA.
+ */
 export class QueryRepository extends BaseRepository {
     constructor() {
         super('queries');
     }
 
-    /**
-     * Obtiene el historial de interacciones de un usuario específico de forma paginada
-     */
     async findByStudentId(studentId, limit = 20, page = 1) {
         const skip = (page - 1) * limit;
         return await this.collection
-            .find({ studentId: new ObjectId(studentId) })
+            .find({ studentId })
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
@@ -21,24 +19,80 @@ export class QueryRepository extends BaseRepository {
     }
 
     /**
-     * Agregación para el Administrador: Métricas globales de interacciones y recomendaciones
+     * Cuenta el total de consultas realizadas a la IA.
+     * @returns {Promise<number>}
      */
-    async getMetricsSummary() {
-        return await this.collection.aggregate([
+    async countTotalQueries() {
+        return await this.collection.countDocuments({});
+    }
+
+    /**
+     * Ejecuta la agregación para desglosar interacciones por estado (PENDIENTE, RESPONDIDA, etc.).
+     * @returns {Promise<Array<{_id: string, count: number}>>}
+     */
+    async getStatusBreakdown() {
+        const pipeline = [
             {
-                $facet: {
-                    totalQueries: [{ $count: 'count' }],
-                    queriesByStatus: [
-                        { $group: { _id: '$status', count: { $sum: 1 } } }
-                    ],
-                    averageRecommendationsPerQuery: [
-                        { $project: { recCount: { $size: { $ifNull: ['$recommendedCourseIds', []] } } } },
-                        { $group: { _id: null, avgRecommended: { $avg: '$recCount' } } }
-                    ]
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 }
                 }
             }
-        ]).toArray();
+        ];
+        return await this.collection.aggregate(pipeline).toArray();
+    }
+
+    /**
+     * Obtiene los cursos más recomendados por la IA en sus respuestas RAG.
+     * @param {number} limit - Cantidad máxima de cursos recomendados a retornar.
+     * @returns {Promise<Array>}
+     */
+    async getTopRecommendedCourses(limit = 5) {
+        const pipeline = [
+            { $unwind: '$recommendedCourseIds' },
+            {
+                $group: {
+                    _id: '$recommendedCourseIds',
+                    totalRecommendations: { $sum: 1 }
+                }
+            },
+            { $sort: { totalRecommendations: -1 } },
+            { $limit: limit },
+            {
+                $addFields: {
+                    courseObjectId: {
+                        $cond: {
+                            if: { $regexMatch: { input: '$_id', regex: /^[0-9a-fA-F]{24}$/ } },
+                            then: { $toObjectId: '$_id' },
+                            else: null
+                        }
+                    }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'courses',
+                    localField: 'courseObjectId',
+                    foreignField: '_id',
+                    as: 'courseDetails'
+                }
+            },
+            { $unwind: { path: '$courseDetails', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: 0,
+                    courseId: '$_id',
+                    title: { $ifNull: ['$courseDetails.title', 'Curso Genérico'] },
+                    category: { $ifNull: ['$courseDetails.category', 'General'] },
+                    totalRecommendations: 1,
+                    averageRating: { $ifNull: ['$courseDetails.averageRating', 0] }
+                }
+            }
+        ];
+
+        return await this.collection.aggregate(pipeline).toArray();
     }
 }
 
-export default new QueryRepository();
+const queryRepositoryInstance = new QueryRepository();
+export default queryRepositoryInstance;

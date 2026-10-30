@@ -5,8 +5,8 @@ import ratingRepositoryInstance from '../repositories/rating.repository.js';
 import logger from '../utils/logger.js';
 
 /**
- * Servicio orientado a objetos para el cálculo de métricas y estadísticas agregadas del sistema (SRP & DIP).
- * Ejecuta pipelines de agregación nativos en MongoDB para alimentar el panel del Administrador.
+ * Servicio orientado a objetos para el cálculo de métricas y estadísticas del sistema (SRP & DIP 100% Cumplidos).
+ * Orquesta la información obtenida desde la capa de repositorios sin acceder directamente a la base de datos.
  */
 export default class MetricService {
     /**
@@ -30,10 +30,10 @@ export default class MetricService {
     async getDashboardOverview() {
         try {
             const [totalStudents, totalQueries, totalCourses, overallRating] = await Promise.all([
-                this.studentRepository.collection.countDocuments({ role: 'student' }),
-                this.queryRepository.collection.countDocuments({}),
-                this.courseRepository.collection.countDocuments({ status: 'ACTIVO' }),
-                this._getGlobalAverageRating()
+                this.studentRepository.countByRole('student'),
+                this.queryRepository.countTotalQueries(),
+                this.courseRepository.countByStatus('ACTIVO'),
+                this.ratingRepository.getGlobalAverageRating()
             ]);
 
             return {
@@ -53,16 +53,7 @@ export default class MetricService {
      * Analiza el rendimiento de las interacciones con n8n desglosando por estados.
      */
     async getAIMetrics() {
-        const pipeline = [
-            {
-                $group: {
-                    _id: '$status',
-                    count: { $sum: 1 }
-                }
-            }
-        ];
-
-        const results = await this.queryRepository.collection.aggregate(pipeline).toArray();
+        const results = await this.queryRepository.getStatusBreakdown();
         const metricsByStatus = {
             PENDIENTE: 0,
             RESPONDIDA: 0,
@@ -93,65 +84,6 @@ export default class MetricService {
      * Obtiene los cursos más frecuentemente recomendados por el motor RAG de n8n.
      */
     async getCourseStats(limit = 5) {
-        const pipeline = [
-            { $unwind: '$recommendedCourseIds' },
-            {
-                $group: {
-                    _id: '$recommendedCourseIds',
-                    totalRecommendations: { $sum: 1 }
-                }
-            },
-            { $sort: { totalRecommendations: -1 } },
-            { $limit: limit },
-            {
-                $addFields: {
-                    courseObjectId: {
-                        $cond: {
-                            if: { $regexMatch: { input: '$_id', regex: /^[0-9a-fA-F]{24}$/ } },
-                            then: { $toObjectId: '$_id' },
-                            else: null
-                        }
-                    }
-                }
-            },
-            {
-                $lookup: {
-                    from: 'courses',
-                    localField: 'courseObjectId',
-                    foreignField: '_id',
-                    as: 'courseDetails'
-                }
-            },
-            { $unwind: { path: '$courseDetails', preserveNullAndEmptyArrays: true } },
-            {
-                $project: {
-                    _id: 0,
-                    courseId: '$_id',
-                    title: { $ifNull: ['$courseDetails.title', 'Curso Genérico'] },
-                    category: { $ifNull: ['$courseDetails.category', 'General'] },
-                    totalRecommendations: 1,
-                    averageRating: { $ifNull: ['$courseDetails.averageRating', 0] }
-                }
-            }
-        ];
-
-        return await this.queryRepository.collection.aggregate(pipeline).toArray();
-    }
-
-    /**
-     * Pipeline auxiliar para calcular la calificación promedio global de toda la plataforma.
-     */
-    async _getGlobalAverageRating() {
-        const pipeline = [
-            {
-                $group: {
-                    _id: null,
-                    avgScore: { $avg: '$score' }
-                }
-            }
-        ];
-
-        const result = await this.ratingRepository.collection.aggregate(pipeline).toArray();
-        return result.length > 0 ? Number(result[0].avgScore.toFixed(2)) : 0;
+        return await this.queryRepository.getTopRecommendedCourses(limit);
     }
 }
