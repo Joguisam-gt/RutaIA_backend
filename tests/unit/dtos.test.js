@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import CreateStudentDTO from '../../src/dtos/student/createStudent.dto.js';
+import CreateStudentDTO from '../../src/dtos/students/createStudent.dto.js';
 import CreateCourseDTO from '../../src/dtos/course/createCourse.dto.js';
 import AskQueryDTO from '../../src/dtos/query/askQuery.dto.js';
 import BadRequestError from '../../src/errors/badRequestError.js';
@@ -8,7 +8,6 @@ describe('DTOs Validation Unit Tests', () => {
     it('CreateStudentDTO debe validar e inmutabilizar un objeto correcto', () => {
         const rawData = { name: 'José Rodríguez', email: 'JOSE@EXAMPLE.COM', level: 'PRINCIPIANTE' };
         const dto = CreateStudentDTO.fromRequest(rawData);
-
         expect(dto.email).toBe('jose@example.com');
         expect(Object.isFrozen(dto)).toBe(true);
     });

@@ -11,10 +11,6 @@ import logger from '../utils/logger.js';
 export default class MetricService {
     /**
      * Inyección de dependencias a través del constructor.
-     * Repositorio de consultas a la IA.
-     * Repositorio de cursos.
-     * Repositorio de usuarios/estudiantes.
-     * Repositorio de calificaciones.
      */
     constructor(
         queryRepository = queryRepositoryInstance,
@@ -30,7 +26,6 @@ export default class MetricService {
 
     /**
      * Retorna el resumen consolidado para la pantalla principal del Dashboard del Administrador.
-     * Totales globales de estudiantes, consultas, cursos y calificación promedio.
      */
     async getDashboardOverview() {
         try {
@@ -55,8 +50,7 @@ export default class MetricService {
     }
 
     /**
-     * Analiza el rendimiento de las interacciones con n8n desglosando por estados (RESPONDIDA, SIN_RESULTADOS, ERROR).
-     * Desglose de estados, porcentaje de éxito y total de consultas.
+     * Analiza el rendimiento de las interacciones con n8n desglosando por estados.
      */
     async getAIMetrics() {
         const pipeline = [
@@ -69,7 +63,6 @@ export default class MetricService {
         ];
 
         const results = await this.queryRepository.collection.aggregate(pipeline).toArray();
-
         const metricsByStatus = {
             PENDIENTE: 0,
             RESPONDIDA: 0,
@@ -78,7 +71,6 @@ export default class MetricService {
         };
 
         let totalInteractions = 0;
-
         results.forEach((item) => {
             if (item._id in metricsByStatus) {
                 metricsByStatus[item._id] = item.count;
@@ -99,8 +91,6 @@ export default class MetricService {
 
     /**
      * Obtiene los cursos más frecuentemente recomendados por el motor RAG de n8n.
-     * Cantidad de cursos a retornar en el ranking.
-     * Ranking con IDs, títulos, apariciones y promedio de estrellas.
      */
     async getCourseStats(limit = 5) {
         const pipeline = [
