@@ -39,4 +39,28 @@ export default class QueryService {
     async getAdminMetrics() {
         return await this.queryRepository.getMetricsSummary();
     }
+
+    /**
+     * Registra la calificación y comentarios que el estudiante le otorga a la respuesta/recomendaciones de la IA.
+     */
+    async rateAIInteraction(studentId, rateQueryDto) {
+        const updatedQuery = await this.queryRepository.addAIRating(
+            rateQueryDto.queryId,
+            studentId,
+            { score: rateQueryDto.score, comment: rateQueryDto.comment }
+        );
+
+        if (!updatedQuery) {
+            throw new Error('No se encontró la interacción especificada o no pertenece al estudiante.');
+        }
+
+        return updatedQuery;
+    }
+
+    /**
+     * Permite al Administrador visualizar las interacciones calificadas junto al chat (pregunta/respuesta).
+     */
+    async getAIRatingsForAdmin(limit = 20, page = 1) {
+        return await this.queryRepository.findAllAIRatingsWithChat(limit, page);
+    }
 }
