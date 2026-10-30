@@ -78,4 +78,40 @@ export default class QueryController {
             next(error);
         }
     }
+    /**
+     * Permite al estudiante calificar la interacción recién completada con la IA.
+     */
+    rateAIInteraction = async (req, res, next) => {
+        try {
+            const studentId = req.user.id;
+            const rateQueryDto = req.body; // Inyectado y validado previamente por ValidatorMiddleware
+            const updatedInteraction = await this.queryService.rateAIInteraction(studentId, rateQueryDto);
+
+            res.status(200).json({
+                success: true,
+                message: 'Calificación de la interacción con la IA registrada exitosamente.',
+                data: updatedInteraction
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Permite al Administrador obtener las calificaciones de la IA con el chat completo del estudiante.
+     */
+    getAIRatingsForAdmin = async (req, res, next) => {
+        try {
+            const limit = Number(req.query.limit) || 20;
+            const page = Number(req.query.page) || 1;
+            const aiRatingsWithChat = await this.queryService.getAIRatingsForAdmin(limit, page);
+
+            res.status(200).json({
+                success: true,
+                data: aiRatingsWithChat
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
 }
