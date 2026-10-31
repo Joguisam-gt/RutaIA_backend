@@ -1,0 +1,56 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": [
+      "recipientId",
+      "recipientRole",
+      "type",
+      "title",
+      "message",
+      "read",
+      "createdAt"
+    ],
+    "properties": {
+      "recipientId": {
+        "bsonType": "string",
+        "description": "ID del usuario o profesor que recibe la notificación"
+      },
+      "recipientRole": {
+        "enum": ["student", "instructor", "admin"],
+        "description": "Rol del destinatario para filtrados del sistema"
+      },
+      "type": {
+        "enum": [
+          "AI_RESPONSE",
+          "COURSE_COMPLETED",
+          "PAYMENT_CONFIRMED",
+          "SYSTEM",
+          "PROJECT_REVIEW"
+        ],
+        "description": "Categoría o evento que originó la notificación"
+      },
+      "title": {
+        "bsonType": "string",
+        "description": "Título breve de la alerta"
+      },
+      "message": {
+        "bsonType": "string",
+        "description": "Cuerpo o detalle informativo de la notificación"
+      },
+      "actionUrl": {
+        "bsonType": ["string", "null"],
+        "description": "Ruta/URL interna del frontend a la que redirige la notificación al hacer clic"
+      },
+      "read": {
+        "bsonType": "bool",
+        "description": "Estado de lectura de la notificación (false por defecto)"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": "date"
+      }
+    }
+  }
+}
