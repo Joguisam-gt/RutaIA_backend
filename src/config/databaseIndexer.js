@@ -37,6 +37,10 @@ export default class DatabaseIndexer {
             );
             await ratings.createIndex({ courseId: 1, score: -1 }, { name: 'idx_ratings_course_score' });
             await ratings.createIndex({ studentId: 1, createdAt: -1 }, { name: 'idx_ratings_student_history' });
+            
+            // 5. Collecion 'notifications' (Centro de notificaciones)
+            const notifications = db.collection('notifications');
+            await notifications.createIndex({ recipientId: 1, read: 1, createdAt: -1 }, { name: 'idx_notifications_user_mailbox' });
 
             logger.info('Estrategia de índices NoSQL aplicada exitosamente en todas las colecciones.');
         } catch (error) {
