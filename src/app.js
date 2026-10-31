@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { CORS_ORIGIN } from './config/environment.js';
 import ErrorHandlerMiddleware from './middlewares/errorHandler.middleware.js';
-
+import notificationRoutes from './routes/notification.routes.js';
 // Importación de enrutadores
 import studentRoutes from './routes/student.routes.js';
 import courseRoutes from './routes/course.routes.js';
@@ -59,6 +59,7 @@ export class App {
         this.app.use('/api/v1/queries', queryRoutes);
         this.app.use('/api/v1/ratings', ratingRoutes);
         this.app.use('/api/v1/metrics', metricRoutes);
+        this.app.use('/api/v1/notifications', notificationRoutes);
 
         // Manejo de rutas inexistentes (404 Not Found)
         this.app.use('*', (req, res) => {
