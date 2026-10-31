@@ -1,3 +1,4 @@
+// src/app.js
 import express from 'express';
 import cors from 'cors';
 import { CORS_ORIGIN } from './config/environment.js';
@@ -89,3 +90,36 @@ export class App {
 // Exportación de la instancia instanciada de Express
 const appInstance = new App();
 export default appInstance.getExpressInstance();
+import ErrorHandlerMiddleware from './middlewares/errorHandler.middleware.js';
+import AppError from './errors/appError.js';
+
+const app = express();
+
+// Middlewares globales
+app.use(cors());
+app.use(express.json());
+
+// Endpoint de salud del servidor
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'UP',
+        service: 'RutaIA Backend Bridge'
+    });
+});
+
+// Definición de Rutas API v1
+app.use('/api/v1/students', studentRoutes);
+app.use('/api/v1/courses', courseRoutes);
+app.use('/api/v1/queries', queryRoutes);
+app.use('/api/v1/ratings', ratingRoutes);
+app.use('/api/v1/metrics', metricRoutes);
+
+// Interceptor para rutas no encontradas (404)
+app.use((req, res, next) => {
+    next(new AppError(`La ruta solicitada '${req.originalUrl}' no existe en este servidor.`, 404));
+});
+
+// Middleware centralizado de errores (Debe ir obligatoriamente al final)
+app.use(ErrorHandlerMiddleware.handle);
+
+export default app;

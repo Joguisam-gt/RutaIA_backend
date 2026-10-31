@@ -1,0 +1,87 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "title",
+            "description",
+            "category",
+            "level",
+            "durationHours",
+            "status",
+            "isVisible"
+        ],
+        "properties": {
+            "_id": {
+                "bsonType": "objectId"
+            },
+            "title": {
+                "bsonType": "string",
+                "minLength": 3,
+                "description": "El título es obligatorio y debe contener al menos 3 caracteres."
+            },
+            "description": {
+                "bsonType": "string",
+                "minLength": 10,
+                "description": "La descripción debe tener al menos 10 caracteres."
+            },
+            "category": {
+                "bsonType": "string"
+            },
+            "level": {
+                "enum": [
+                    "PRINCIPIANTE",
+                    "INTERMEDIO",
+                    "AVANZADO"
+                ]
+            },
+            "durationHours": {
+                "bsonType": [
+                    "double",
+                    "int",
+                    "decimal"
+                ],
+                "minimum": 0.1,
+                "description": "La duración debe ser estrictamente mayor a 0."
+            },
+            "graphNodeId": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ],
+                "description": "Identificador opcional del nodo en el grafo de categorías."
+            },
+            "isVisible": {
+                "bsonType": "bool"
+            },
+            "status": {
+                "enum": [
+                    "PENDIENTE_INGESTA",
+                    "ACTIVO",
+                    "ERROR_INGESTA"
+                ],
+                "description": "Estado del flujo de ingesta vectorial en n8n."
+            },
+            "ingestError": {
+                "bsonType": [
+                    "string",
+                    "null"
+                ]
+            },
+            "averageRating": {
+                "bsonType": [
+                    "double",
+                    "int"
+                ]
+            },
+            "totalRatings": {
+                "bsonType": "int"
+            },
+            "createdAt": {
+                "bsonType": "date"
+            },
+            "updatedAt": {
+                "bsonType": "date"
+            }
+        }
+    }
+}

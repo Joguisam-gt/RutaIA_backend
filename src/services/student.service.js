@@ -1,5 +1,5 @@
 import studentRepositoryInstance from '../repositories/student.repository.js';
-import StudentResponseDTO from '../dtos/student/studentResponse.dto.js';
+import StudentResponseDTO from '../dtos/students/studentResponse.dto.js';
 import BadRequestError from '../errors/badRequestError.js';
 import AppError from '../errors/appError.js';
 import logger from '../utils/logger.js';
@@ -19,8 +19,8 @@ export default class StudentService {
 
     /**
      * Registra un nuevo estudiante verificando previamente que el email no esté duplicado.
-     *  DTO validado con los datos del estudiante.
-     *  DTO de respuesta sanitizado.
+     * DTO validado con los datos del estudiante.
+     * DTO de respuesta sanitizado.
      */
     async registerStudent(studentDto) {
         // 1. Verificación de duplicidad de correo electrónico
@@ -49,7 +49,6 @@ export default class StudentService {
     /**
      * Obtiene la información del perfil del estudiante por su identificador único.
      * ID del estudiante en MongoDB.
-     * 
      */
     async getStudentById(studentId) {
         const student = await this.studentRepository.findById(studentId);
@@ -61,8 +60,8 @@ export default class StudentService {
 
     /**
      * Obtiene el listado paginado de todos los estudiantes registrados.
-     *  Cantidad de registros por página.
-     *  Número de página.
+     * Cantidad de registros por página.
+     * Número de página.
      */
     async getAllStudents(limit = 20, page = 1) {
         const students = await this.studentRepository.findAllStudents(limit, page);

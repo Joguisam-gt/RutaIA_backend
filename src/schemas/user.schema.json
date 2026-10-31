@@ -1,0 +1,51 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "name",
+            "email",
+            "role",
+            "level"
+        ],
+        "properties": {
+            "_id": {
+                "bsonType": "objectId"
+            },
+            "name": {
+                "bsonType": "string",
+                "minLength": 2,
+                "description": "El nombre es obligatorio y debe tener al menos 2 caracteres."
+            },
+            "email": {
+                "bsonType": "string",
+                "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+                "description": "Debe ser un correo electrónico válido."
+            },
+            "role": {
+                "enum": [
+                    "student",
+                    "admin"
+                ],
+                "description": "El rol solo puede ser 'student' o 'admin'."
+            },
+            "level": {
+                "enum": [
+                    "PRINCIPIANTE",
+                    "INTERMEDIO",
+                    "AVANZADO"
+                ],
+                "description": "El nivel debe coincidir con UserLevels."
+            },
+            "areaOfInterest": {
+                "bsonType": "string",
+                "description": "Área de interés académica o técnica."
+            },
+            "createdAt": {
+                "bsonType": "date"
+            },
+            "updatedAt": {
+                "bsonType": "date"
+            }
+        }
+    }
+}

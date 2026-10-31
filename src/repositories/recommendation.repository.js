@@ -1,8 +1,8 @@
 // src/repositories/recommendation.repository.js
-const { ObjectId } = require('mongodb');
-const BaseRepository = require('./base.repository');
+import { ObjectId } from 'mongodb';
+import BaseRepository from './base.repository.js';
 
-class RecommendationRepository extends BaseRepository {
+export class RecommendationRepository extends BaseRepository {
     constructor() {
         super('categories_graph');
     }
@@ -38,4 +38,4 @@ class RecommendationRepository extends BaseRepository {
     }
 }
 
-module.exports = new RecommendationRepository();
+export default new RecommendationRepository();

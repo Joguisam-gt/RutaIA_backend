@@ -1,60 +1,30 @@
-// src/repositories/course.repository.js
-const { ObjectId } = require('mongodb');
-const BaseRepository = require('./base.repository');
+import BaseRepository from './base.repository.js';
 
-class CourseRepository extends BaseRepository {
+/**
+ * Repositorio encargado del acceso a datos de la colección de cursos.
+ */
+export class CourseRepository extends BaseRepository {
     constructor() {
         super('courses');
     }
 
-    /**
-     * Obtiene la lista de cursos visibles para el estudiante con su calificación promedio calculada vía Aggregation Pipeline
-     */
-    async findVisibleWithRatings(filters = {}) {
-        const matchStage = {
-            isVisible: true,
-            status: 'PROCESADO',
-            ...filters
-        };
-
-        return await this.collection.aggregate([
-            { $match: matchStage },
-            {
-                $lookup: {
-                    from: 'ratings',
-                    localField: '_id',
-                    foreignField: 'courseId',
-                    as: 'ratingsList'
-                }
-            },
-            {
-                $addFields: {
-                    averageRating: { $ifNull: [{ $avg: '$ratingsList.stars' }, 0] },
-                    totalRatings: { $size: '$ratingsList' }
-                }
-            },
-            {
-                $project: {
-                    ratingsList: 0 
-                }
-            },
-            { $sort: { createdAt: -1 } }
-        ]).toArray();
+    async findByCategory(category, limit = 20, page = 1) {
+        const skip = (page - 1) * limit;
+        return await this.collection
+            .find({ category, status: 'ACTIVO' })
+            .skip(skip)
+            .limit(limit)
+            .toArray();
     }
 
     /**
-     * Cambia el estado de visibilidad del curso (Acción exclusiva del Administrador)
+     * Cuenta el total de cursos filtrados por su estado.
+     * Estado del curso (ej. 'ACTIVO').
      */
-    async updateVisibility(courseId, isVisible) {
-        return await this.updateById(courseId, { isVisible });
-    }
-
-    /**
-     * Cambia el estado de procesamiento del PDF (PENDIENTE -> PROCESADO -> ERROR)
-     */
-    async updateStatus(courseId, status) {
-        return await this.updateById(courseId, { status });
+    async countByStatus(status = 'ACTIVO') {
+        return await this.collection.countDocuments({ status });
     }
 }
 
-module.exports = new CourseRepository();
+const courseRepositoryInstance = new CourseRepository();
+export default courseRepositoryInstance;
