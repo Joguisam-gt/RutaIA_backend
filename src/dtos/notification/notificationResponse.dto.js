@@ -1,4 +1,3 @@
-// src/dtos/notification/notificationResponse.dto.js
 export default class NotificationResponseDTO {
     static fromEntity(entity) {
         return {
