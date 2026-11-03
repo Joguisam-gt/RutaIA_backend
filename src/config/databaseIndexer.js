@@ -1,4 +1,4 @@
-// Principio SRP (Single Responsibility Principle): Encapsula la sincronización e indexación de colecciones MongoDB con validación nativa de esquemas JSON.
+// Principio SRP (Single Responsibility Principle): Encapsula la inicialización de colecciones, validadores JSON Schema e índices en MongoDB.
 import { createRequire } from 'module';
 import { database } from './database.js';
 import logger from '../utils/logger.js';
@@ -14,24 +14,21 @@ const ratingSchema = require('../schemas/rating.schema.json');
 const notificationSchema = require('../schemas/notification.schema.json');
 
 /**
- * Normaliza y extrae el objeto $jsonSchema para evitar anidamientos duplicados como { $jsonSchema: { $jsonSchema: ... } }
+ * Normaliza y extrae el objeto $jsonSchema para evitar anidamientos duplicados.
  * @param {Object} rawSchema - Esquema cargado directamente del archivo JSON.
  * @returns {Object|null} Objeto validador listo para MongoDB.
  */
 function buildMongoValidator(rawSchema) {
     if (!rawSchema) return null;
 
-    // Si el JSON ya trae la raíz { "$jsonSchema": { ... } }
     if (rawSchema.$jsonSchema) {
         return { $jsonSchema: rawSchema.$jsonSchema };
     }
 
-    // Si el JSON trae la estructura { "validator": { "$jsonSchema": { ... } } }
     if (rawSchema.validator && rawSchema.validator.$jsonSchema) {
         return { $jsonSchema: rawSchema.validator.$jsonSchema };
     }
 
-    // Si el JSON es directamente la especificación del esquema { "bsonType": "object", ... }
     return { $jsonSchema: rawSchema };
 }
 
@@ -85,10 +82,12 @@ export async function initializeDatabaseIndexes() {
     }
 }
 
-// Alias de función para mantener soporte con invocaciones como Database.applyJsonSchemas()
+// Alias de función requeridos por server.js y controllers
+export const applyIndexes = initializeDatabaseIndexes;
 export const applyJsonSchemas = initializeDatabaseIndexes;
 
-// Asignación de propiedades para compatibilidad de invocaciones dinámicas
+// Asignación de métodos a las propiedades del objeto/función para llamadas estáticas dinámicas
+initializeDatabaseIndexes.applyIndexes = initializeDatabaseIndexes;
 initializeDatabaseIndexes.applyJsonSchemas = initializeDatabaseIndexes;
 initializeDatabaseIndexes.initializeDatabaseIndexes = initializeDatabaseIndexes;
 
