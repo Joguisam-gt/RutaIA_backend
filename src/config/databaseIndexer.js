@@ -1,4 +1,3 @@
-// src/config/databaseIndexer.js
 // Principios SOLID: Aplicación del Single Responsibility Principle (SRP) al centralizar la carga de esquemas e indexación de colecciones MongoDB.
 import { createRequire } from 'module';
 import { database } from './database.js';
