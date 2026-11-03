@@ -1,12 +1,12 @@
-// Principios SOLID: Aplicación del Single Responsibility Principle (SRP) al centralizar la carga de esquemas e indexación de colecciones MongoDB.
+// Principio SRP (Single Responsibility Principle): Encapsula la creación e indexación de colecciones MongoDB con validación JSON Schema.
 import { createRequire } from 'module';
 import { database } from './database.js';
 import { logger } from '../utils/logger.js';
 
-// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON
+// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON de esquemas
 const require = createRequire(import.meta.url);
 
-// Carga estática de esquemas de validación JSON para cada colección
+// Carga estática de los esquemas JSON de validación
 const userSchema = require('../schemas/user.schema.json');
 const courseSchema = require('../schemas/course.schema.json');
 const querySchema = require('../schemas/query.schema.json');
@@ -15,6 +15,7 @@ const notificationSchema = require('../schemas/notification.schema.json');
 
 /**
  * Inicializa y valida las colecciones e índices en la base de datos nativa de MongoDB.
+ * @returns {Promise<void>}
  */
 export async function initializeDatabaseIndexes() {
     try {
@@ -59,3 +60,13 @@ export async function initializeDatabaseIndexes() {
         throw error;
     }
 }
+
+// Vincula el método al objeto principal para soportar invocaciones por propiedad
+initializeDatabaseIndexes.initializeDatabaseIndexes = initializeDatabaseIndexes;
+initializeDatabaseIndexes.initialize = initializeDatabaseIndexes;
+
+// Exportación nombrada de compatibilidad adicional
+export const DatabaseIndexer = initializeDatabaseIndexes;
+
+// Exportación por defecto requerida por src/server.js
+export default initializeDatabaseIndexes;
