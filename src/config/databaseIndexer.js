@@ -1,12 +1,18 @@
+// src/config/databaseIndexer.js
+// Principios SOLID: Aplicación del Single Responsibility Principle (SRP) al centralizar la carga de esquemas e indexación de colecciones MongoDB.
+import { createRequire } from 'module';
 import { database } from './database.js';
 import { logger } from '../utils/logger.js';
 
-// Importación de esquemas JSON de validación
-import userSchema from '../schemas/user.schema.json' assert { type: 'json' };
-import courseSchema from '../schemas/course.schema.json' assert { type: 'json' };
-import querySchema from '../schemas/query.schema.json' assert { type: 'json' };
-import ratingSchema from '../schemas/rating.schema.json' assert { type: 'json' };
-import notificationSchema from '../schemas/notification.schema.json' assert { type: 'json' };
+// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON
+const require = createRequire(import.meta.url);
+
+// Carga estática de esquemas de validación JSON para cada colección
+const userSchema = require('../schemas/user.schema.json');
+const courseSchema = require('../schemas/course.schema.json');
+const querySchema = require('../schemas/query.schema.json');
+const ratingSchema = require('../schemas/rating.schema.json');
+const notificationSchema = require('../schemas/notification.schema.json');
 
 /**
  * Inicializa y valida las colecciones e índices en la base de datos nativa de MongoDB.
@@ -26,7 +32,7 @@ export async function initializeDatabaseIndexes() {
             { name: 'metrics', schema: null }
         ];
 
-        // Creación de colecciones con validadores nativos si no existen
+        // Creación de colecciones con validadores nativos si no existen previamente
         for (const col of collectionsToCreate) {
             if (!existingCollections.includes(col.name)) {
                 const options = col.schema ? { validator: { $jsonSchema: col.schema } } : {};
@@ -35,7 +41,7 @@ export async function initializeDatabaseIndexes() {
             }
         }
 
-        // Definición e índices de rendimiento
+        // Creación de índices compuestos y únicos para optimización de consultas
         await db.collection('users').createIndex({ email: 1 }, { unique: true });
         await db.collection('users').createIndex({ role: 1 });
 
