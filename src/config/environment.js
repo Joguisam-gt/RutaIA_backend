@@ -1,12 +1,12 @@
 // src/config/environment.js
+// Principio SRP (Single Responsibility Principle): Encapsula la lectura, validación y exportación de variables de entorno del sistema.
 import dotenv from 'dotenv';
 
-// Carga las variables de entorno desde el archivo .env
+// Carga las variables de entorno desde el archivo .env en la raíz del proyecto
 dotenv.config();
 
 /**
  * Clase encargada de gestionar, aislar y validar la configuración de variables de entorno.
- * Aplica el principio SRP (Single Responsibility Principle) al encapsular el contrato de entorno.
  */
 export class EnvironmentConfig {
     /**
@@ -36,7 +36,7 @@ export class EnvironmentConfig {
      * @returns {string|number} Valor procesado de la variable.
      */
     get(key) {
-        // Si la variable no pertenece al contrato, se arroja la excepción esperada por las pruebas
+        // Si la variable no pertenece al contrato, se arroja la excepción requerida por los tests unitarios
         if (!(key in EnvironmentConfig.CONTRACT)) {
             throw new Error(`La variable '${key}' no existe`);
         }
@@ -52,14 +52,12 @@ export class EnvironmentConfig {
     }
 }
 
-// Exportación por defecto para mantener compatibilidad con los tests unitarios
-export default EnvironmentConfig;
-
-/**
- * Objeto global congelado para acceso directo en servicios y repositorios.
- */
+// Instancia global por defecto cargada con process.env
 const defaultConfig = new EnvironmentConfig();
 
+/**
+ * Objeto estructurado de entorno para consumo centralizado en servicios.
+ */
 export const environment = {
     get port() { return defaultConfig.get('PORT'); },
     get nodeEnv() { return defaultConfig.get('NODE_ENV'); },
@@ -73,3 +71,15 @@ export const environment = {
         get docsWebhookUrl() { return defaultConfig.get('N8N_DOCS_WEBHOOK_URL'); }
     }
 };
+
+// Exportaciones nombradas individuales para mantener compatibilidad con middlewares y controladores existentes (ej. auth.middleware.js)
+export const JWT_SECRET = defaultConfig.get('JWT_SECRET');
+export const PORT = defaultConfig.get('PORT');
+export const NODE_ENV = defaultConfig.get('NODE_ENV');
+export const MONGODB_URI = defaultConfig.get('MONGODB_URI');
+export const DB_NAME = defaultConfig.get('DB_NAME');
+export const N8N_CHAT_WEBHOOK_URL = defaultConfig.get('N8N_CHAT_WEBHOOK_URL');
+export const N8N_DOCS_WEBHOOK_URL = defaultConfig.get('N8N_DOCS_WEBHOOK_URL');
+
+// Exportación por defecto para la clase EnvironmentConfig requerida por las pruebas unitarias
+export default EnvironmentConfig;
