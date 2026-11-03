@@ -1,104 +1,66 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Principio SRP & OCP: Define el contrato de variables de entorno mediante la clase EnvironmentConfig, permitiendo instanciación para pruebas unitarias y exportación singleton para la aplicación.
 import dotenv from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
-class EnvironmentValidator {
-    static validate(schema, envSource = process.env) {
-        const parsedConfig = {};
-        const missingVars = [];
-        const typeErrors = [];
-
-        for (const rule of schema) {
-            const rawValue = envSource[rule.key];
-            const value = (rawValue !== undefined && rawValue !== '') ? rawValue : rule.defaultValue;
-
-            if (rule.required && (value === undefined || value === '')) {
-                missingVars.push(rule.key);
-                continue;
-            }
-
-            if (value !== undefined) {
-                switch (rule.type) {
-                    case 'number': {
-                        const numericValue = Number(value);
-                        if (Number.isNaN(numericValue)) {
-                            typeErrors.push(`${rule.key}: Se esperaba 'number', se recibió '${value}'`);
-                        } else {
-                            parsedConfig[rule.key] = numericValue;
-                        }
-                        break;
-                    }
-                    case 'boolean': {
-                        const strVal = String(value).toLowerCase().trim();
-                        if (strVal === 'true' || strVal === '1') parsedConfig[rule.key] = true;
-                        else if (strVal === 'false' || strVal === '0') parsedConfig[rule.key] = false;
-                        else typeErrors.push(`${rule.key}: Se esperaba 'boolean', se recibió '${value}'`);
-                        break;
-                    }
-                    case 'string':
-                    default:
-                        parsedConfig[rule.key] = String(value).trim();
-                        break;
-                }
-            }
-        }
-
-        if (missingVars.length > 0 || typeErrors.length > 0) {
-            console.error('\n [Falla Crítica] Configuración del Servidor Inválida:');
-            if (missingVars.length > 0) console.error(` - Faltantes: ${missingVars.join(', ')}`);
-            if (typeErrors.length > 0) console.error(` - Tipos inválidos:\n   * ${typeErrors.join('\n   * ')}`);
-            process.exit(1);
-        }
-
-        return parsedConfig;
-    }
-}
+/**
+ * Contrato de variables permitidas en la aplicación
+ */
+const ALLOWED_ENV_KEYS = new Set([
+    'PORT',
+    'NODE_ENV',
+    'MONGODB_URI',
+    'DB_NAME',
+    'JWT_SECRET',
+    'N8N_CHAT_WEBHOOK_URL',
+    'N8N_DOCS_WEBHOOK_URL',
+    'CORS_ORIGIN',
+]);
 
 export class EnvironmentConfig {
-    #config;
-
-    constructor(envPath = path.resolve(__dirname, '../../.env')) {
-        dotenv.config({ path: envPath });
-
-        const schema = [
-            { key: 'PORT', type: 'number', required: false, defaultValue: 3000 },
-            { key: 'NODE_ENV', type: 'string', required: false, defaultValue: 'development' },
-            { key: 'CORS_ORIGIN', type: 'string', required: true },
-            { key: 'MONGODB_URI', type: 'string', required: true },
-            { key: 'MONGODB_DB_NAME', type: 'string', required: true },
-            { key: 'JWT_SECRET', type: 'string', required: true },
-            { key: 'N8N_WEBHOOK_URL_INGEST', type: 'string', required: true },
-            { key: 'N8N_WEBHOOK_URL_CHAT', type: 'string', required: true },
-            { key: 'N8N_SHARED_SECRET', type: 'string', required: true }
-        ];
-
-        const validatedValues = EnvironmentValidator.validate(schema, process.env);
-        this.#config = Object.freeze(validatedValues);
+    /**
+     * Constructor adaptable para inyección de entorno en pruebas
+     * @param {Object} envSource - Objeto con variables de entorno (por defecto process.env)
+     */
+    constructor(envSource = process.env) {
+        this.env = envSource;
     }
 
+    /**
+     * Obtiene y valida una variable de entorno declarada en el contrato.
+     * @param {string} key - Nombre de la variable de entorno
+     * @returns {string|number|null} Valor de la variable
+     */
     get(key) {
-        if (!(key in this.#config)) {
-            throw new Error(`La variable '${key}' no existe en el contrato de entorno.`);
+        if (!ALLOWED_ENV_KEYS.has(key)) {
+            throw new Error(`La variable de entorno '${key}' no está declarada en el contrato de configuración.`);
         }
-        return this.#config[key];
-    }
 
-    getAll() {
-        return { ...this.#config };
+        const value = this.env[key];
+
+        if (key === 'PORT') {
+            return value ? Number(value) : 3000;
+        }
+
+        return value ?? null;
     }
 }
 
-export const environmentConfigInstance = new EnvironmentConfig();
+// Instancia singleton para uso en el servidor
+const defaultEnvConfig = new EnvironmentConfig(process.env);
 
-export const PORT = environmentConfigInstance.get('PORT');
-export const NODE_ENV = environmentConfigInstance.get('NODE_ENV');
-export const CORS_ORIGIN = environmentConfigInstance.get('CORS_ORIGIN');
-export const MONGODB_URI = environmentConfigInstance.get('MONGODB_URI');
-export const MONGODB_DB_NAME = environmentConfigInstance.get('MONGODB_DB_NAME');
-export const JWT_SECRET = environmentConfigInstance.get('JWT_SECRET');
-export const N8N_WEBHOOK_URL_INGEST = environmentConfigInstance.get('N8N_WEBHOOK_URL_INGEST');
-export const N8N_WEBHOOK_URL_CHAT = environmentConfigInstance.get('N8N_WEBHOOK_URL_CHAT');
-export const N8N_SHARED_SECRET = environmentConfigInstance.get('N8N_SHARED_SECRET');
+export const environment = {
+    port: defaultEnvConfig.get('PORT'),
+    nodeEnv: defaultEnvConfig.get('NODE_ENV') || 'development',
+    mongo: {
+        uri: defaultEnvConfig.get('MONGODB_URI') || 'mongodb://localhost:27017',
+        dbName: defaultEnvConfig.get('DB_NAME') || 'rutaia_db',
+    },
+    jwtSecret: defaultEnvConfig.get('JWT_SECRET') || 'default_secret',
+    n8n: {
+        chatWebhookUrl: defaultEnvConfig.get('N8N_CHAT_WEBHOOK_URL') || '',
+        docsWebhookUrl: defaultEnvConfig.get('N8N_DOCS_WEBHOOK_URL') || '',
+    },
+};
+
+export default EnvironmentConfig;

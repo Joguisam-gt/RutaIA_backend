@@ -1,55 +1,65 @@
-// Fragmento de conexión en src/config/database.js
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import logger from '../utils/logger.js';
+// Principio SRP y DIP: Administra la conexión nativa con MongoClient y provee acceso a la base de datos sin acoplar detalles de implementación a la capa de repositorio.
+import { MongoClient } from 'mongodb';
+import { environment } from './environment.js';
+import { logger } from '../utils/logger.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+class Database {
+  constructor() {
+    // Instancia única del cliente nativo de MongoDB (Singleton)
+    this.client = null;
+    this.db = null;
+  }
 
-export default class Database {
-    // ... métodos previos (connect, getInstance, etc.)
-
-    /**
-     * Aplica los esquemas JSON de validación a las colecciones correspondientes.
-     * @param {Db} db - Instancia de la base de datos MongoDB.
-     */
-    static async applyJsonSchemas(db) {
-        const schemasMap = {
-            users: 'user.schema.json',
-            courses: 'course.schema.json',
-            queries: 'query.schema.json',
-            ratings: 'rating.schema.json',
-            categories_graph: 'categoryGraph.schema.json'
-        };
-
-        for (const [collectionName, schemaFileName] of Object.entries(schemasMap)) {
-            try {
-                const schemaPath = path.resolve(__dirname, '../schemas', schemaFileName);
-                const schemaContent = await fs.readFile(schemaPath, 'utf-8');
-                const validatorSchema = JSON.parse(schemaContent);
-
-                // Garantiza la existencia de la colección antes de aplicar la validación
-                const collections = await db.listCollections({ name: collectionName }).toArray();
-                if (collections.length === 0) {
-                    await db.createCollection(collectionName);
-                }
-
-                // Aplica o actualiza la regla $jsonSchema en modo estricto
-                await db.command({
-                    collMod: collectionName,
-                    validator: validatorSchema,
-                    validationLevel: 'strict',
-                    validationAction: 'error'
-                });
-
-                logger.info(`Validator $jsonSchema aplicado correctamente a la colección: ${collectionName}`);
-            } catch (error) {
-                logger.error(`Error al aplicar el esquema JSON en ${collectionName}:`, error.message);
-            }
-        }
+  /**
+   * Inicializa la conexión a la base de datos utilizando el pool nativo de MongoClient.
+   */
+  async connect() {
+    // Si ya existe una conexión activa, reutiliza la instancia para evitar sobrecargar el pool
+    if (this.db) {
+      return this.db;
     }
+
+    try {
+      // Creación del cliente nativo con configuraciones de conexión optimizadas
+      this.client = new MongoClient(environment.mongo.uri, {
+        maxPoolSize: 10, // Límite máximo de conexiones concurrentes en el pool
+        serverSelectionTimeoutMS: 5000, // Timeout de selección de servidor
+      });
+
+      // Establece la conexión con el clúster/servidor MongoDB
+      await this.client.connect();
+      this.db = this.client.db(environment.mongo.dbName);
+
+      logger.info(`Conexión exitosa a la base de datos MongoDB: ${environment.mongo.dbName}`);
+      return this.db;
+    } catch (error) {
+      logger.error('Error al conectar con la base de datos MongoDB:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Obtiene la instancia actual de la base de datos.
+   */
+  getDb() {
+    if (!this.db) {
+      throw new Error('La base de datos no ha sido inicializada. Llama a connect() primero.');
+    }
+    return this.db;
+  }
+
+  /**
+   * Cierra de forma limpia la conexión del cliente MongoDB.
+   */
+  async disconnect() {
+    if (this.client) {
+      await this.client.close();
+      this.db = null;
+      this.client = null;
+      logger.info('Conexión con MongoDB cerrada correctamente.');
+    }
+  }
 }
 
-
-
+// Exporta una única instancia para garantizar el patrón Singleton en toda la aplicación
+export const database = new Database();
