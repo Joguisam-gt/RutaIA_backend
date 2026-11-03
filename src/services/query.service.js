@@ -5,64 +5,52 @@ import { logger } from '../utils/logger.js';
 
 export class QueryService {
     /**
-     * Inyección de dependencias mediante el constructor.
-     * @param {Object} queryRepository - Repositorio que hereda de BaseRepository para persistencia en MongoDB.
+     * Constructor con inyección de dependencias.
+     * @param {Object} queryRepository - Repositorio de consultas.
      */
-    constructor(queryRepository) {
+    constructor(queryRepository = null) {
         this.queryRepository = queryRepository;
     }
 
     /**
-     * Procesa la pregunta del usuario utilizando el backend como proxy seguro hacia n8n.
-     * @param {Object} askQueryDto - Datos validados de la consulta (prompt, userId, role, etc.)
-     * @returns {Object} Respuesta procesada por la IA y registrada en MongoDB.
+     * Procesa la consulta del usuario a través del proxy del Backend hacia n8n.
+     * @param {Object} askQueryDto - DTO con los datos de la pregunta
      */
     async processQuery(askQueryDto) {
-        const { prompt, userId, userRole = 'anonymous', courseId } = askQueryDto;
+        const { prompt, userId = null, userRole = 'anonymous', courseId = null } = askQueryDto;
 
-        // 1. Persistencia Inicial (Atómica): Registro de la consulta en estado PENDING
         const initialQueryData = {
             prompt,
-            userId: userId || null,
+            userId,
             userRole,
-            courseId: courseId || null,
+            courseId,
             status: queryStatus.PENDING,
             response: null,
             createdAt: new Date(),
             updatedAt: new Date(),
         };
 
-        // Guarda el registro inicial en MongoDB
         const savedQuery = await this.queryRepository.create(initialQueryData);
 
         try {
-            // 2. Patrón Proxy: Invocación interna desde el servidor Node.js hacia el Webhook de n8n
-            const n8nPayload = {
-                queryId: savedQuery._id,
-                prompt,
-                userRole,
-                userId: userId || 'anonymous',
-                courseId: courseId || 'general',
-            };
-
-            logger.info(`Enviando petición proxy a n8n para queryId: ${savedQuery._id}`);
-
-            // Realiza la petición HTTP hacia n8n
             const response = await fetch(environment.n8n.chatWebhookUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(n8nPayload),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    queryId: savedQuery._id,
+                    prompt,
+                    userRole,
+                    userId,
+                    courseId,
+                }),
             });
 
             if (!response.ok) {
-                throw new AppError(`Error en el servicio de automatización n8n: ${response.statusText}`, 502);
+                throw new AppError(`Error en la automatización n8n: ${response.statusText}`, 502);
             }
 
             const n8nResult = await response.json();
 
-            // 3. Actualización de Registro: Guarda la respuesta obtenida de la IA y actualiza el estado a COMPLETED
             const updatePayload = {
                 status: queryStatus.COMPLETED,
                 response: n8nResult.output || n8nResult.response || n8nResult.message,
@@ -70,37 +58,42 @@ export class QueryService {
                 updatedAt: new Date(),
             };
 
-            const updatedQuery = await this.queryRepository.updateById(savedQuery._id, updatePayload);
-
-            return {
-                queryId: updatedQuery._id,
-                prompt: updatedQuery.prompt,
-                response: updatedQuery.response,
-                status: updatedQuery.status,
-                createdAt: updatedQuery.createdAt,
-            };
-
+            return await this.queryRepository.updateById(savedQuery._id, updatePayload);
         } catch (error) {
-            logger.error(`Error durante la ejecución del proxy n8n para queryId ${savedQuery._id}:`, error);
+            logger.error(`Error en proxy n8n para queryId ${savedQuery._id}:`, error);
 
-            // En caso de fallo en n8n o timeout, se actualiza el registro a FAILED para mantener consistencia en auditorías
             await this.queryRepository.updateById(savedQuery._id, {
                 status: queryStatus.FAILED,
                 error: error.message,
                 updatedAt: new Date(),
             });
 
-            throw new AppError('No se pudo obtener respuesta del servicio de inteligencia artificial. Intente nuevamente.', 500);
+            throw new AppError('No se pudo obtener respuesta del servicio de inteligencia artificial.', 500);
         }
     }
 
     /**
-     * Obtiene el historial de consultas filtrado por usuario.
+     * Registra la calificación otorgada por el usuario a una respuesta de la IA.
+     * @param {Object} rateQueryDto - DTO validado de la calificación
      */
-    async getUserQueryHistory(userId) {
-        if (!userId) {
-            throw new AppError('El ID de usuario es obligatorio para consultar el historial.', 400);
+    async rateQuery(rateQueryDto) {
+        const { queryId, score, comment = '' } = rateQueryDto;
+
+        if (!this.queryRepository) {
+            throw new AppError('Repositorio no configurado en QueryService.', 500);
         }
-        return await this.queryRepository.find({ userId });
+
+        const ratingData = {
+            queryId,
+            score,
+            comment,
+            ratedAt: new Date(),
+        };
+
+        // Invoca al repositorio para registrar la calificación
+        return await this.queryRepository.addRating(queryId, ratingData);
     }
 }
+
+// Exportación por defecto obligatoria para que los test de Vitest e instanciaciones por defecto no fallen
+export default QueryService;
