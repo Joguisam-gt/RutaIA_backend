@@ -1,14 +1,21 @@
-
+// Principios SOLID: Aplicación del SRP (Single Responsibility Principle) y OCP (Open/Closed Principle)
+// Encapsula la gestión del cliente MongoClient y la aplicación delegada de esquemas e índices.
 import { MongoClient } from 'mongodb';
-import logger from '../utils/logger.js'; // Importación por defecto en lugar de nombrada
+import logger from '../utils/logger.js';
 import { environment } from './environment.js';
+import { initializeDatabaseIndexes } from './databaseIndexer.js';
 
-class Database {
+export class Database {
   constructor() {
+    // Instancia del cliente nativo de MongoDB (Singleton)
     this.client = null;
     this.db = null;
   }
 
+  /**
+   * Inicializa la conexión con el clúster o servidor local de MongoDB.
+   * @returns {Promise<Db>} Instancia de la base de datos conectada.
+   */
   async connect() {
     if (this.db) {
       return this.db;
@@ -31,6 +38,9 @@ class Database {
     }
   }
 
+  /**
+   * Obtiene la instancia activa de la base de datos.
+   */
   getDb() {
     if (!this.db) {
       throw new Error('La base de datos no ha sido inicializada. Llama a connect() primero.');
@@ -38,6 +48,24 @@ class Database {
     return this.db;
   }
 
+  /**
+   * Aplica los esquemas JSON de validación e índices en las colecciones.
+   * Soluciona la llamada requerida en server.js: Database.applyJsonSchemas()
+   */
+  async applyJsonSchemas() {
+    return await initializeDatabaseIndexes();
+  }
+
+  /**
+   * Método estático para compatibilidad si server.js invoca Database.applyJsonSchemas() como clase.
+   */
+  static async applyJsonSchemas() {
+    return await initializeDatabaseIndexes();
+  }
+
+  /**
+   * Cierra de forma limpia la conexión MongoClient.
+   */
   async disconnect() {
     if (this.client) {
       await this.client.close();
@@ -48,5 +76,6 @@ class Database {
   }
 }
 
+// Instancia singleton compartida
 export const database = new Database();
 export default database;
