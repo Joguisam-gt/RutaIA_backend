@@ -1,3 +1,4 @@
+// src/config/environment.js
 import dotenv from 'dotenv';
 
 // Carga las variables de entorno desde el archivo .env
@@ -35,9 +36,9 @@ export class EnvironmentConfig {
      * @returns {string|number} Valor procesado de la variable.
      */
     get(key) {
-        // Si la variable no pertenece al contrato, se arroja un error para evitar lectura ilegítima
+        // Si la variable no pertenece al contrato, se arroja la excepción esperada por las pruebas
         if (!(key in EnvironmentConfig.CONTRACT)) {
-            throw new Error(`Variable '${key}' no está declarada en el contrato de entorno.`);
+            throw new Error(`La variable '${key}' no existe`);
         }
 
         const value = this.env[key] !== undefined ? this.env[key] : EnvironmentConfig.CONTRACT[key];
