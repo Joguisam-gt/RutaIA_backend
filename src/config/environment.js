@@ -1,4 +1,3 @@
-// src/config/environment.js
 // Principio SRP (Single Responsibility Principle): Encapsula la lectura, validación y exportación de variables de entorno del sistema.
 import dotenv from 'dotenv';
 
@@ -19,7 +18,10 @@ export class EnvironmentConfig {
         DB_NAME: 'rutaia_db',
         JWT_SECRET: 'default_secret',
         N8N_CHAT_WEBHOOK_URL: '',
-        N8N_DOCS_WEBHOOK_URL: ''
+        N8N_DOCS_WEBHOOK_URL: '',
+        N8N_WEBHOOK_URL_INGEST: '',
+        N8N_WEBHOOK_URL_CHAT: '',
+        N8N_SHARED_SECRET: ''
     };
 
     /**
@@ -67,19 +69,18 @@ export const environment = {
     },
     get jwtSecret() { return defaultConfig.get('JWT_SECRET'); },
     n8n: {
-        get chatWebhookUrl() { return defaultConfig.get('N8N_CHAT_WEBHOOK_URL'); },
-        get docsWebhookUrl() { return defaultConfig.get('N8N_DOCS_WEBHOOK_URL'); }
+        get chatWebhookUrl() { return defaultConfig.get('N8N_CHAT_WEBHOOK_URL') || defaultConfig.get('N8N_WEBHOOK_URL_CHAT'); },
+        get docsWebhookUrl() { return defaultConfig.get('N8N_DOCS_WEBHOOK_URL') || defaultConfig.get('N8N_WEBHOOK_URL_INGEST'); },
+        get sharedSecret() { return defaultConfig.get('N8N_SHARED_SECRET'); }
     }
 };
 
-// Exportaciones nombradas individuales para mantener compatibilidad con middlewares y controladores existentes (ej. auth.middleware.js)
+// Exportaciones nombradas individuales para mantener compatibilidad con middlewares y servicios existentes
 export const JWT_SECRET = defaultConfig.get('JWT_SECRET');
 export const PORT = defaultConfig.get('PORT');
 export const NODE_ENV = defaultConfig.get('NODE_ENV');
 export const MONGODB_URI = defaultConfig.get('MONGODB_URI');
 export const DB_NAME = defaultConfig.get('DB_NAME');
-export const N8N_CHAT_WEBHOOK_URL = defaultConfig.get('N8N_CHAT_WEBHOOK_URL');
-export const N8N_DOCS_WEBHOOK_URL = defaultConfig.get('N8N_DOCS_WEBHOOK_URL');
 
-// Exportación por defecto para la clase EnvironmentConfig requerida por las pruebas unitarias
-export default EnvironmentConfig;
+// Constantes de Webhooks e integración n8n
+export const N8N_CHAT_WEBHOOK_URL = defaultConfig.get('N8N_
