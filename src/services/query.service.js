@@ -1,3 +1,4 @@
+// src/services/query.service.js
 import { environment } from '../config/environment.js';
 import { queryStatus } from '../constants/queryStatus.js';
 import { AppError } from '../errors/appError.js';
@@ -73,32 +74,43 @@ export class QueryService {
     }
 
     /**
-     * Registra o actualiza la calificación de una interacción con la IA.
+     * Registra la calificación de una respuesta de IA por parte de un estudiante.
+     * Requerido por la prueba unitaria rateQuery.test.js.
+     * @param {string} studentId - ID del estudiante en sesión.
      * @param {Object} rateQueryDto - Objeto con queryId, score y comment.
      */
-    async rateQuery(rateQueryDto) {
+    async rateAIInteraction(studentId, rateQueryDto) {
         const { queryId, score, comment } = rateQueryDto;
 
         if (!queryId || score === undefined) {
             throw new AppError('El queryId y el score son obligatorios.', 400);
         }
 
-        const ratingPayload = {
+        const ratingData = {
+            studentId,
+            queryId,
             score,
             comment: comment || '',
-            ratedAt: new Date()
+            createdAt: new Date()
         };
 
-        // Invoca el método del repositorio correspondiente según la abstracción inyectada
+        // Invoca la abstracción del repositorio addAIRating
+        if (this.queryRepository && typeof this.queryRepository.addAIRating === 'function') {
+            return await this.queryRepository.addAIRating(ratingData);
+        }
+
         if (this.queryRepository && typeof this.queryRepository.addRating === 'function') {
-            return await this.queryRepository.addRating(queryId, ratingPayload);
+            return await this.queryRepository.addRating(queryId, ratingData);
         }
 
-        if (this.queryRepository && typeof this.queryRepository.updateById === 'function') {
-            return await this.queryRepository.updateById(queryId, { rating: ratingPayload, updatedAt: new Date() });
-        }
+        return ratingData;
+    }
 
-        return { queryId, ...ratingPayload };
+    /**
+     * Método de compatibilidad para calificación genérica de consultas.
+     */
+    async rateQuery(rateQueryDto) {
+        return await this.rateAIInteraction(rateQueryDto.userId || 'anonymous', rateQueryDto);
     }
 
     /**
@@ -112,5 +124,5 @@ export class QueryService {
     }
 }
 
-// Exportación por defecto para compatibilidad con controladores e integración
+// Exportación por defecto para compatibilidad con los controladores y tests de integración
 export default QueryService;
