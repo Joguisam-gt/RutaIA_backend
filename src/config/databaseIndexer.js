@@ -1,9 +1,9 @@
-// Principio SRP (Single Responsibility Principle): Encapsula la creación e indexación de colecciones MongoDB con validación JSON Schema.
+// Principio SRP (Single Responsibility Principle): Encapsula la sincronización e indexación de colecciones MongoDB con validación nativa de esquemas JSON.
 import { createRequire } from 'module';
 import { database } from './database.js';
-import { logger } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 
-// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON de esquemas
+// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON
 const require = createRequire(import.meta.url);
 
 // Carga estática de los esquemas JSON de validación
@@ -12,6 +12,28 @@ const courseSchema = require('../schemas/course.schema.json');
 const querySchema = require('../schemas/query.schema.json');
 const ratingSchema = require('../schemas/rating.schema.json');
 const notificationSchema = require('../schemas/notification.schema.json');
+
+/**
+ * Normaliza y extrae el objeto $jsonSchema para evitar anidamientos duplicados como { $jsonSchema: { $jsonSchema: ... } }
+ * @param {Object} rawSchema - Esquema cargado directamente del archivo JSON.
+ * @returns {Object|null} Objeto validador listo para MongoDB.
+ */
+function buildMongoValidator(rawSchema) {
+    if (!rawSchema) return null;
+
+    // Si el JSON ya trae la raíz { "$jsonSchema": { ... } }
+    if (rawSchema.$jsonSchema) {
+        return { $jsonSchema: rawSchema.$jsonSchema };
+    }
+
+    // Si el JSON trae la estructura { "validator": { "$jsonSchema": { ... } } }
+    if (rawSchema.validator && rawSchema.validator.$jsonSchema) {
+        return { $jsonSchema: rawSchema.validator.$jsonSchema };
+    }
+
+    // Si el JSON es directamente la especificación del esquema { "bsonType": "object", ... }
+    return { $jsonSchema: rawSchema };
+}
 
 /**
  * Inicializa y valida las colecciones e índices en la base de datos nativa de MongoDB.
@@ -32,10 +54,12 @@ export async function initializeDatabaseIndexes() {
             { name: 'metrics', schema: null }
         ];
 
-        // Creación de colecciones con validadores nativos si no existen previamente
+        // Creación de colecciones con validadores nativos normalizados
         for (const col of collectionsToCreate) {
             if (!existingCollections.includes(col.name)) {
-                const options = col.schema ? { validator: { $jsonSchema: col.schema } } : {};
+                const validatorObj = buildMongoValidator(col.schema);
+                const options = validatorObj ? { validator: validatorObj } : {};
+
                 await db.createCollection(col.name, options);
                 logger.info(`Colección '${col.name}' creada con validador JSON Schema.`);
             }
@@ -61,12 +85,12 @@ export async function initializeDatabaseIndexes() {
     }
 }
 
-// Vincula el método al objeto principal para soportar invocaciones por propiedad
+// Alias de función para mantener soporte con invocaciones como Database.applyJsonSchemas()
+export const applyJsonSchemas = initializeDatabaseIndexes;
+
+// Asignación de propiedades para compatibilidad de invocaciones dinámicas
+initializeDatabaseIndexes.applyJsonSchemas = initializeDatabaseIndexes;
 initializeDatabaseIndexes.initializeDatabaseIndexes = initializeDatabaseIndexes;
-initializeDatabaseIndexes.initialize = initializeDatabaseIndexes;
 
-// Exportación nombrada de compatibilidad adicional
 export const DatabaseIndexer = initializeDatabaseIndexes;
-
-// Exportación por defecto requerida por src/server.js
 export default initializeDatabaseIndexes;
