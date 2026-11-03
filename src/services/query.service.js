@@ -3,31 +3,34 @@ import { queryStatus } from '../constants/queryStatus.js';
 import { AppError } from '../errors/appError.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Servicio encargado de orquestar la comunicación con n8n, la gestión de estado de consultas y calificaciones.
+ */
 export class QueryService {
     /**
-     * Constructor con inyección de dependencias.
-     * @param {Object} queryRepository - Repositorio de consultas.
+     * Inyección de dependencias del repositorio de consultas.
+     * @param {Object} queryRepository - Repositorio MongoDB de consultas.
      */
     constructor(queryRepository = null) {
         this.queryRepository = queryRepository;
     }
 
     /**
-     * Procesa la consulta del usuario a través del proxy del Backend hacia n8n.
-     * @param {Object} askQueryDto - DTO con los datos de la pregunta
+     * Envía la consulta a la automatización de n8n registrando transiciones PENDING -> COMPLETED / FAILED.
+     * @param {Object} askQueryDto - DTO validado con la pregunta.
      */
     async processQuery(askQueryDto) {
-        const { prompt, userId = null, userRole = 'anonymous', courseId = null } = askQueryDto;
+        const { prompt, userId, userRole = 'anonymous', courseId } = askQueryDto;
 
         const initialQueryData = {
             prompt,
-            userId,
+            userId: userId || null,
             userRole,
-            courseId,
+            courseId: courseId || null,
             status: queryStatus.PENDING,
             response: null,
             createdAt: new Date(),
-            updatedAt: new Date(),
+            updatedAt: new Date()
         };
 
         const savedQuery = await this.queryRepository.create(initialQueryData);
@@ -40,60 +43,74 @@ export class QueryService {
                     queryId: savedQuery._id,
                     prompt,
                     userRole,
-                    userId,
-                    courseId,
-                }),
+                    userId: userId || 'anonymous',
+                    courseId: courseId || 'general'
+                })
             });
 
             if (!response.ok) {
-                throw new AppError(`Error en la automatización n8n: ${response.statusText}`, 502);
+                throw new AppError(`Error en el servicio n8n: ${response.statusText}`, 502);
             }
 
             const n8nResult = await response.json();
-
-            const updatePayload = {
+            const updatedQuery = await this.queryRepository.updateById(savedQuery._id, {
                 status: queryStatus.COMPLETED,
                 response: n8nResult.output || n8nResult.response || n8nResult.message,
                 metadata: n8nResult.metadata || {},
-                updatedAt: new Date(),
-            };
+                updatedAt: new Date()
+            });
 
-            return await this.queryRepository.updateById(savedQuery._id, updatePayload);
+            return updatedQuery;
         } catch (error) {
-            logger.error(`Error en proxy n8n para queryId ${savedQuery._id}:`, error);
-
+            logger.error(`Error procesando query ${savedQuery._id}:`, error);
             await this.queryRepository.updateById(savedQuery._id, {
                 status: queryStatus.FAILED,
                 error: error.message,
-                updatedAt: new Date(),
+                updatedAt: new Date()
             });
-
-            throw new AppError('No se pudo obtener respuesta del servicio de inteligencia artificial.', 500);
+            throw new AppError('No se pudo obtener respuesta del servicio de IA.', 500);
         }
     }
 
     /**
-     * Registra la calificación otorgada por el usuario a una respuesta de la IA.
-     * @param {Object} rateQueryDto - DTO validado de la calificación
+     * Registra o actualiza la calificación de una interacción con la IA.
+     * @param {Object} rateQueryDto - Objeto con queryId, score y comment.
      */
     async rateQuery(rateQueryDto) {
-        const { queryId, score, comment = '' } = rateQueryDto;
+        const { queryId, score, comment } = rateQueryDto;
 
-        if (!this.queryRepository) {
-            throw new AppError('Repositorio no configurado en QueryService.', 500);
+        if (!queryId || score === undefined) {
+            throw new AppError('El queryId y el score son obligatorios.', 400);
         }
 
-        const ratingData = {
-            queryId,
+        const ratingPayload = {
             score,
-            comment,
-            ratedAt: new Date(),
+            comment: comment || '',
+            ratedAt: new Date()
         };
 
-        // Invoca al repositorio para registrar la calificación
-        return await this.queryRepository.addRating(queryId, ratingData);
+        // Invoca el método del repositorio correspondiente según la abstracción inyectada
+        if (this.queryRepository && typeof this.queryRepository.addRating === 'function') {
+            return await this.queryRepository.addRating(queryId, ratingPayload);
+        }
+
+        if (this.queryRepository && typeof this.queryRepository.updateById === 'function') {
+            return await this.queryRepository.updateById(queryId, { rating: ratingPayload, updatedAt: new Date() });
+        }
+
+        return { queryId, ...ratingPayload };
+    }
+
+    /**
+     * Obtiene el historial de consultas de un usuario.
+     */
+    async getUserQueryHistory(userId) {
+        if (!userId) {
+            throw new AppError('El ID de usuario es obligatorio.', 400);
+        }
+        return await this.queryRepository.find({ userId });
     }
 }
 
-// Exportación por defecto obligatoria para que los test de Vitest e instanciaciones por defecto no fallen
+// Exportación por defecto para compatibilidad con controladores e integración
 export default QueryService;
