@@ -1,67 +1,53 @@
+// src/utils/logger.js
+// Principio SRP (Single Responsibility Principle): Encapsula el formateo e impresión de logs del sistema sin requerir paquetes externos.
+
 /**
- * Clase orientada a objetos para el registro centralizado de eventos y errores en consola (SRP & OCP).
- * Aplica marcas de tiempo precisas y formato estandarizado según el nivel de severidad.
+ * Función auxiliar para formatear la marca de tiempo ISO actual.
+ * @returns {string} Timestamp en formato ISO.
  */
-export class Logger {
+const getTimestamp = () => new Date().toISOString();
+
+/**
+ * Instancia del registrador de eventos basado en funciones nativas de consola.
+ */
+const loggerInstance = {
     /**
-     * Genera una marca de tiempo en formato ISO estándar.
-     * Marca de tiempo (ej. "2026-10-29T17:14:00.000Z").
+     * Imprime mensajes informativos generalizados.
+     * @param {...any} args - Mensajes o metadatos a registrar.
      */
-    static _getTimestamp() {
-        return new Date().toISOString();
-    }
+    info: (...args) => {
+        console.log(`[${getTimestamp()}] [INFO]:`, ...args);
+    },
 
     /**
-     * Aplica formato estructurado a la salida de log.
-     *  Nivel de severidad (INFO, WARN, ERROR, DEBUG).
-     *  Mensaje descriptivo.
-     *  Datos adicionales o stack trace.
-     *  Cadena formateada para la consola.
+     * Imprime advertencias de ejecución o contingencias controladas.
+     * @param {...any} args - Mensajes o metadatos de advertencia.
      */
-    static _formatMessage(level, message, meta) {
-        const timestamp = Logger._getTimestamp();
-        const formattedMeta = meta ? ` | Meta: ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : '';
-        return `[${timestamp}] [${level}]: ${message}${formattedMeta}`;
-    }
+    warn: (...args) => {
+        console.warn(`[${getTimestamp()}] [WARN]:`, ...args);
+    },
 
     /**
-     * Registra eventos informativos del ciclo de vida de la aplicación.
-     * Mensaje informativo.
-     * Metadatos opcionales.
+     * Imprime errores y excepciones capturadas por el sistema.
+     * @param {...any} args - Errores u objetos de excepción.
      */
-    static info(message, meta) {
-        console.log(Logger._formatMessage('INFO', message, meta));
-    }
+    error: (...args) => {
+        console.error(`[${getTimestamp()}] [ERROR]:`, ...args);
+    },
 
     /**
-     * Registra advertencias u observaciones no críticas del sistema.
-     * Mensaje de advertencia.
-     * Metadatos opcionales.
+     * Imprime trazabilidad de depuración en entornos de desarrollo.
+     * @param {...any} args - Información detallada de depuración.
      */
-    static warn(message, meta) {
-        console.warn(Logger._formatMessage('WARN', message, meta));
-    }
-
-    /**
-     * Registra errores críticos o excepciones de la aplicación.
-     * Mensaje de error.
-     * Objeto de error o stack trace.
-     */
-    static error(message, meta) {
-        console.error(Logger._formatMessage('ERROR', message, meta));
-    }
-
-    /**
-     * Registra mensajes de depuración en entornos de desarrollo.
-     * Mensaje de depuración.
-     * Metadatos opcionales.
-     */
-    static debug(message, meta) {
-        if (process.env.NODE_ENV === 'development') {
-            console.debug(Logger._formatMessage('DEBUG', message, meta));
+    debug: (...args) => {
+        if (process.env.NODE_ENV !== 'production') {
+            console.debug(`[${getTimestamp()}] [DEBUG]:`, ...args);
         }
     }
-}
+};
 
-// Exportación por defecto de la clase estática de logger
-export default Logger;
+// Exportación nombrada para soportar: import { logger } from '../utils/logger.js';
+export const logger = loggerInstance;
+
+// Exportación por defecto para soportar: import logger from '../utils/logger.js';
+export default loggerInstance;

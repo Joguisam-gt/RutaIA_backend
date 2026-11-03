@@ -1,51 +1,95 @@
-import Database from './database.js';
+// Principio SRP (Single Responsibility Principle): Encapsula la inicialización de colecciones, validadores JSON Schema e índices en MongoDB.
+import { createRequire } from 'module';
+import { database } from './database.js';
 import logger from '../utils/logger.js';
 
+// Inicializa 'require' dentro del contexto de Módulos ES para la carga limpia de archivos JSON
+const require = createRequire(import.meta.url);
+
+// Carga estática de los esquemas JSON de validación
+const userSchema = require('../schemas/user.schema.json');
+const courseSchema = require('../schemas/course.schema.json');
+const querySchema = require('../schemas/query.schema.json');
+const ratingSchema = require('../schemas/rating.schema.json');
+const notificationSchema = require('../schemas/notification.schema.json');
+
 /**
- * Clase responsable de la creación e imposición de índices optimizados en MongoDB (SRP).
+ * Normaliza y extrae el objeto $jsonSchema para evitar anidamientos duplicados.
+ * @param {Object} rawSchema - Esquema cargado directamente del archivo JSON.
+ * @returns {Object|null} Objeto validador listo para MongoDB.
  */
-export default class DatabaseIndexer {
-    /**
-     * Aplica la estrategia completa de índices a todas las colecciones de la plataforma.
-     */
-    static async applyIndexes() {
-        try {
-            const db = Database.getDb();
+function buildMongoValidator(rawSchema) {
+    if (!rawSchema) return null;
 
-            // 1. Colección 'users'
-            const users = db.collection('users');
-            await users.createIndex({ email: 1 }, { unique: true, name: 'idx_users_email_unique' });
-            await users.createIndex({ role: 1, createdAt: -1 }, { name: 'idx_users_role_createdAt' });
+    if (rawSchema.$jsonSchema) {
+        return { $jsonSchema: rawSchema.$jsonSchema };
+    }
 
-            // 2. Colección 'courses'
-            const courses = db.collection('courses');
-            await courses.createIndex({ status: 1, category: 1 }, { name: 'idx_courses_status_category' });
-            await courses.createIndex({ title: 'text', description: 'text' }, { name: 'idx_courses_text_search' });
-            await courses.createIndex({ averageRating: -1, totalRatings: -1 }, { name: 'idx_courses_ratings_rank' });
+    if (rawSchema.validator && rawSchema.validator.$jsonSchema) {
+        return { $jsonSchema: rawSchema.validator.$jsonSchema };
+    }
 
-            // 3. Colección 'queries' (Optimizada para documentos desnormalizados)
-            const queries = db.collection('queries');
-            await queries.createIndex({ studentId: 1, createdAt: -1 }, { name: 'idx_queries_student_history' });
-            await queries.createIndex({ status: 1, createdAt: -1 }, { name: 'idx_queries_status_metrics' });
-            await queries.createIndex({ 'recommendedCourses.courseId': 1 }, { name: 'idx_queries_recommended_course' });
+    return { $jsonSchema: rawSchema };
+}
 
-            // 4. Colección 'ratings' (Prevención de duplicados + Consultas rápidas)
-            const ratings = db.collection('ratings');
-            await ratings.createIndex(
-                { courseId: 1, studentId: 1 },
-                { unique: true, name: 'idx_ratings_course_student_unique' }
-            );
-            await ratings.createIndex({ courseId: 1, score: -1 }, { name: 'idx_ratings_course_score' });
-            await ratings.createIndex({ studentId: 1, createdAt: -1 }, { name: 'idx_ratings_student_history' });
-            
-            // 5. Collecion 'notifications' (Centro de notificaciones)
-            const notifications = db.collection('notifications');
-            await notifications.createIndex({ recipientId: 1, read: 1, createdAt: -1 }, { name: 'idx_notifications_user_mailbox' });
+/**
+ * Inicializa y valida las colecciones e índices en la base de datos nativa de MongoDB.
+ * @returns {Promise<void>}
+ */
+export async function initializeDatabaseIndexes() {
+    try {
+        const db = database.getDb();
+        const existingCollections = (await db.listCollections().toArray()).map((c) => c.name);
 
-            logger.info('Estrategia de índices NoSQL aplicada exitosamente en todas las colecciones.');
-        } catch (error) {
-            logger.error('Error al aplicar los índices en la base de datos:', error.message);
-            throw error;
+        // Mapeo de colecciones y sus esquemas JSON correspondientes
+        const collectionsToCreate = [
+            { name: 'users', schema: userSchema },
+            { name: 'courses', schema: courseSchema },
+            { name: 'queries', schema: querySchema },
+            { name: 'ratings', schema: ratingSchema },
+            { name: 'notifications', schema: notificationSchema },
+            { name: 'metrics', schema: null }
+        ];
+
+        // Creación de colecciones con validadores nativos normalizados
+        for (const col of collectionsToCreate) {
+            if (!existingCollections.includes(col.name)) {
+                const validatorObj = buildMongoValidator(col.schema);
+                const options = validatorObj ? { validator: validatorObj } : {};
+
+                await db.createCollection(col.name, options);
+                logger.info(`Colección '${col.name}' creada con validador JSON Schema.`);
+            }
         }
+
+        // Creación de índices compuestos y únicos para optimización de consultas
+        await db.collection('users').createIndex({ email: 1 }, { unique: true });
+        await db.collection('users').createIndex({ role: 1 });
+
+        await db.collection('courses').createIndex({ category: 1, status: 1 });
+        await db.collection('courses').createIndex({ instructorId: 1 });
+
+        await db.collection('queries').createIndex({ userId: 1, createdAt: -1 });
+        await db.collection('queries').createIndex({ status: 1 });
+
+        await db.collection('ratings').createIndex({ queryId: 1 });
+        await db.collection('notifications').createIndex({ userId: 1, read: 1 });
+
+        logger.info('Índices y esquemas de MongoDB sincronizados correctamente.');
+    } catch (error) {
+        logger.error('Error inicializando índices y esquemas en MongoDB:', error);
+        throw error;
     }
 }
+
+// Alias de función requeridos por server.js y controllers
+export const applyIndexes = initializeDatabaseIndexes;
+export const applyJsonSchemas = initializeDatabaseIndexes;
+
+// Asignación de métodos a las propiedades del objeto/función para llamadas estáticas dinámicas
+initializeDatabaseIndexes.applyIndexes = initializeDatabaseIndexes;
+initializeDatabaseIndexes.applyJsonSchemas = initializeDatabaseIndexes;
+initializeDatabaseIndexes.initializeDatabaseIndexes = initializeDatabaseIndexes;
+
+export const DatabaseIndexer = initializeDatabaseIndexes;
+export default initializeDatabaseIndexes;
