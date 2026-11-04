@@ -16,11 +16,11 @@ export class CourseController {
      */
     getAllCourses = async (req, res, next) => {
         try {
-            // Extraemos filtros opcionales de req.query según RF 04
             const { category, level, status } = req.query;
             const filters = { category, level, status };
+            const userRole = req.user?.role || 'student'; // Milla extra: detecta si es admin
 
-            const courses = await this.courseService.getAllCourses(filters);
+            const courses = await this.courseService.getAllCourses(filters, userRole);
 
             return res.status(200).json({
                 success: true,
