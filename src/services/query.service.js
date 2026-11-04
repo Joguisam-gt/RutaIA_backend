@@ -1,129 +1,141 @@
+// src/services/query.service.js
 import { environment } from '../config/environment.js';
-import { queryStatus } from '../constants/queryStatus.js';
 import { AppError } from '../errors/appError.js';
 import { logger } from '../utils/logger.js';
+import { ObjectId } from 'mongodb';
 
-/**
- * Servicio encargado de orquestar la comunicación con n8n, la gestión de estado de consultas y calificaciones.
- * Aplica los principios SOLID (SRP y DIP).
- */
 export class QueryService {
-    /**
-     * Inyección de dependencias del repositorio de consultas.
-     * @param {Object} queryRepository - Repositorio MongoDB de consultas.
-     */
     constructor(queryRepository = null) {
         this.queryRepository = queryRepository;
     }
 
-    /**
-     * Envía la consulta a la automatización de n8n registrando transiciones PENDING -> COMPLETED / FAILED.
-     * @param {Object} askQueryDto - DTO validado con la pregunta del usuario.
-     * @returns {Object} Consulta guardada con la respuesta de la IA.
-     */
+    _toValidObjectId(id) {
+        if (id && ObjectId.isValid(id)) {
+            return new ObjectId(id);
+        }
+        return new ObjectId('000000000000000000000000');
+    }
+
     async processQuery(askQueryDto) {
-        const { prompt, userId, userRole = 'anonymous', courseId } = askQueryDto;
+        const webhookUrl = environment.n8n.chatWebhookUrl;
+
+        if (!webhookUrl) {
+            throw new AppError('La URL del webhook de n8n no está configurada.', 503);
+        }
+
+        const { prompt, userQuery, studentId, userId, userRole = 'anonymous', courseId } = askQueryDto;
+        const queryText = prompt || userQuery;
+
+        if (!queryText || typeof queryText !== 'string' || queryText.trim().length < 3) {
+            throw new AppError('La pregunta debe tener al menos 3 caracteres.', 400);
+        }
 
         const initialQueryData = {
-            prompt,
-            userId: userId || null,
-            userRole,
-            courseId: courseId || null,
-            status: queryStatus.PENDING,
-            response: null,
+            studentId: this._toValidObjectId(studentId || userId),
+            userQuery: queryText.trim(),
+            status: 'PENDIENTE',
+            aiResponse: null,
+            errorMessage: null,
             createdAt: new Date(),
             updatedAt: new Date()
         };
 
-        const savedQuery = await this.queryRepository.create(initialQueryData);
+        let savedQuery = null;
+        if (this.queryRepository && typeof this.queryRepository.create === 'function') {
+            savedQuery = await this.queryRepository.create(initialQueryData);
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 360000);
 
         try {
-            const response = await fetch(environment.n8n.chatWebhookUrl, {
+            const response = await fetch(webhookUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
                 body: JSON.stringify({
-                    queryId: savedQuery._id,
-                    prompt,
+                    queryId: savedQuery?._id || null,
+                    prompt: queryText,
                     userRole,
-                    userId: userId || 'anonymous',
+                    userId: String(studentId || userId || 'anonymous_session'),
                     courseId: courseId || 'general'
                 })
             });
 
+            clearTimeout(timeoutId);
+
+            const rawText = await response.text();
+            logger.info(`[n8n Response HTTP ${response.status}]: ${rawText}`);
+
             if (!response.ok) {
-                throw new AppError(`Error en el servicio n8n: ${response.statusText}`, 502);
+                throw new AppError(`El webhook de n8n respondió con estado ${response.status}: ${rawText}`, 502);
             }
 
-            const n8nResult = await response.json();
-            const updatedQuery = await this.queryRepository.updateById(savedQuery._id, {
-                status: queryStatus.COMPLETED,
-                response: n8nResult.output || n8nResult.response || n8nResult.message,
-                metadata: n8nResult.metadata || {},
-                updatedAt: new Date()
-            });
+            let n8nResult = {};
+            try {
+                n8nResult = JSON.parse(rawText);
+            } catch {
+                n8nResult = { output: rawText };
+            }
 
-            return updatedQuery;
+            let payload = n8nResult;
+            if (Array.isArray(payload) && payload.length > 0) {
+                payload = payload[0];
+            }
+
+            const aiAnswer =
+                payload?.output ||
+                payload?.response ||
+                payload?.text ||
+                payload?.message ||
+                payload?.json?.output ||
+                payload?.json?.response ||
+                (typeof payload === 'string' ? payload : null);
+
+            if (!aiAnswer) {
+                throw new AppError(`Estructura de respuesta no válida recibida desde n8n: ${rawText}`, 502);
+            }
+
+            // Actualización en base de datos sin sobrescribir el retorno al frontend
+            if (savedQuery && this.queryRepository?.updateById) {
+                await this.queryRepository.updateById(savedQuery._id, {
+                    status: 'RESPONDIDA',
+                    aiResponse: String(aiAnswer),
+                    updatedAt: new Date()
+                });
+            }
+
+            // Estructura limpia garantizada para el Frontend
+            return {
+                _id: savedQuery?._id || null,
+                userQuery: queryText,
+                status: 'RESPONDIDA',
+                aiResponse: String(aiAnswer),
+                createdAt: initialQueryData.createdAt
+            };
+
         } catch (error) {
-            logger.error(`Error procesando query ${savedQuery._id}:`, error);
-            await this.queryRepository.updateById(savedQuery._id, {
-                status: queryStatus.FAILED,
-                error: error.message,
-                updatedAt: new Date()
-            });
-            throw new AppError('No se pudo obtener respuesta del servicio de IA.', 500);
+            clearTimeout(timeoutId);
+            logger.error(`Error procesando query ${savedQuery?._id || ''}:`, error);
+
+            const isTimeout = error.name === 'AbortError';
+            const errorMsg = isTimeout ? 'Timeout en el servicio de IA (6 minutos)' : error.message;
+
+            if (savedQuery && this.queryRepository?.updateById) {
+                await this.queryRepository.updateById(savedQuery._id, {
+                    status: 'ERROR',
+                    errorMessage: errorMsg,
+                    updatedAt: new Date()
+                });
+            }
+
+            if (isTimeout) {
+                throw new AppError('El servicio de IA excedió el tiempo máximo de espera.', 504);
+            }
+
+            throw error instanceof AppError ? error : new AppError(error.message || 'No se pudo obtener respuesta del servicio de IA.', 500);
         }
-    }
-
-    /**
-     * Registra la calificación dada por un estudiante a una interacción con la IA.
-     * @param {string} studentId - ID del estudiante en sesión.
-     * @param {Object} rateQueryDto - Objeto DTO con queryId, score y comment.
-     * @returns {Promise<Object>} Resultado de la persistencia de la calificación.
-     */
-    async rateAIInteraction(studentId, rateQueryDto) {
-        const { queryId, score, comment } = rateQueryDto;
-
-        if (!queryId || score === undefined) {
-            throw new AppError('El queryId y el score son obligatorios.', 400);
-        }
-
-        // Estructura de datos de la calificación requerida por la prueba unitaria
-        const ratingData = {
-            score,
-            comment: comment || ''
-        };
-
-        // Invoca addAIRating con el orden de argumentos esperado por el test: (queryId, studentId, ratingData)
-        if (this.queryRepository && typeof this.queryRepository.addAIRating === 'function') {
-            return await this.queryRepository.addAIRating(queryId, studentId, ratingData);
-        }
-
-        // Fallback de respaldo en caso de usar addRating
-        if (this.queryRepository && typeof this.queryRepository.addRating === 'function') {
-            return await this.queryRepository.addRating(queryId, { studentId, ...ratingData });
-        }
-
-        return { queryId, studentId, ...ratingData };
-    }
-
-    /**
-     * Método de compatibilidad para llamadas directas con DTO completo.
-     */
-    async rateQuery(rateQueryDto) {
-        return await this.rateAIInteraction(rateQueryDto.studentId || rateQueryDto.userId || 'anonymous', rateQueryDto);
-    }
-
-    /**
-     * Obtiene el historial de consultas filtrado por estudiante/usuario.
-     * @param {string} userId - ID del usuario.
-     */
-    async getUserQueryHistory(userId) {
-        if (!userId) {
-            throw new AppError('El ID de usuario es obligatorio.', 400);
-        }
-        return await this.queryRepository.find({ userId });
     }
 }
 
-// Exportación por defecto para mantener compatibilidad
 export default QueryService;

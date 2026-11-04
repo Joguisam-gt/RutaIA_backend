@@ -1,50 +1,57 @@
+// src/middlewares/auth.middleware.js
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET } from '../config/environment.js';
-import AppError from '../errors/appError.js';
+import * as envModule from '../config/environment.js';
+import { AppError } from '../errors/appError.js';
 
-/**
- * Middleware orientado a objetos para el control de autenticación y autorización por roles (SRP).
- */
-export default class AuthMiddleware {
-    /**
-     * Verifica la validez del token JWT enviado en la cabecera Authorization.
-     */
-    static authenticate(req, res, next) {
+const JWT_SECRET = 
+    envModule.JWT_SECRET || 
+    envModule.environment?.jwtSecret || 
+    process.env.JWT_SECRET || 
+    'rutaia_secret_jwt_key_2026';
+
+export const authMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return next(new AppError('No autorizado. Token no proporcionado.', 401));
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return next(new AppError('Token inválido o expirado.', 401));
+    }
+};
+
+export const optionalAuthMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
         try {
-            const authHeader = req.headers.authorization;
-
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                throw new AppError('Acceso denegado. No se proporcionó un token de autenticación válido.', 401);
-            }
-
-            const token = authHeader.split(' ')[1];
             const decoded = jwt.verify(token, JWT_SECRET);
-
-            req.user = {
-                id: decoded.id || decoded.sub,
-                role: decoded.role || 'student',
-                email: decoded.email
-            };
-
-            return next();
-        } catch (error) {
-            if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-                return next(new AppError('El token de autenticación es inválido o ha expirado.', 401));
-            }
-            return next(error);
+            req.user = decoded;
+        } catch {
+            // Permite el paso para usuarios anónimos
         }
     }
+    next();
+};
 
-    /**
-     * Restringe el acceso a la ruta únicamente a los roles especificados.
-     * Roles permitidos ('admin', 'student').
-     */
-    static authorize(...allowedRoles) {
-        return (req, res, next) => {
-            if (!req.user || !allowedRoles.includes(req.user.role)) {
-                return next(new AppError('No tienes permisos suficientes para realizar esta acción.', 403));
-            }
-            return next();
-        };
-    }
+export const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.role)) {
+            return next(new AppError('Acceso denegado. Permisos insuficientes.', 403));
+        }
+        next();
+    };
+};
+
+export class AuthMiddleware {
+    static authMiddleware = authMiddleware;
+    static optionalAuthMiddleware = optionalAuthMiddleware;
+    static authorize = authorize;
 }
+
+export default AuthMiddleware;
