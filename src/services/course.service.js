@@ -1,19 +1,15 @@
+// src/services/course.service.js
 import courseRepositoryInstance from '../repositories/course.repository.js';
 import RecommendationService from './recommendation.service.js';
 import AppError from '../errors/appError.js';
 import BadRequestError from '../errors/badRequestError.js';
+import NotFoundError from '../errors/notFoundError.js';
 import logger from '../utils/logger.js';
 
-/**
- * Servicio orientado a objetos para la gestión del ciclo de vida y reglas de negocio de cursos (SRP & DIP).
- * Aplica reglas de visibilidad, validación de archivos PDF y coordina la ingesta con n8n.
- */
+// Niveles permitidos estrictamente por el RF 03
+const VALID_LEVELS = Object.freeze(['Básico', 'Intermedio', 'Avanzado']);
+
 export default class CourseService {
-    /**
-     * Inyección de dependencias a través del constructor.
-     * Instancia del repositorio de cursos.
-     *  Instancia del cliente HTTP hacia n8n.
-     */
     constructor(
         courseRepository = courseRepositoryInstance,
         recommendationService = new RecommendationService()
@@ -23,97 +19,150 @@ export default class CourseService {
     }
 
     /**
-     * Registra un curso en MongoDB y delega la ingesta del PDF al webhook en n8n para generación de vectores.
-     *  DTO con datos validados del curso.
-     *  Objeto del archivo PDF subido (Multer).
-     *  Documento del curso registrado.
+     * Valida las reglas de negocio de un curso antes de persistirlo
+     * @private
      */
-    async createCourse(courseDto, file) {
-        // 1. Validación de presencia y formato del archivo PDF
-        if (!file || !file.buffer) {
-            throw new BadRequestError('Es obligatorio adjuntar un archivo PDF con el contenido del curso.');
+    _validateCourseData(data) {
+        const title = (data.title || data.name || '').trim();
+        const description = (data.description || '').trim();
+        const duration = Number(data.durationHours || data.duration);
+
+        // Regla: No podrán registrarse cursos sin nombre o descripción
+        if (!title) {
+            throw new BadRequestError('El nombre o título del curso es obligatorio.');
         }
-        if (file.mimetype !== 'application/pdf') {
-            throw new BadRequestError('El archivo adjunto debe ser de tipo PDF (application/pdf).');
+        if (!description) {
+            throw new BadRequestError('La descripción del curso es obligatoria.');
         }
 
-        // 2. Creación inicial en MongoDB en estado PENDIENTE_INGESTA
-        const initialCourseData = {
-            title: courseDto.title,
-            description: courseDto.description,
-            category: courseDto.category,
-            level: courseDto.level,
-            durationHours: Number(courseDto.durationHours),
-            graphNodeId: courseDto.graphNodeId || null,
-            isVisible: true,
-            status: 'PENDIENTE_INGESTA'
+        // Regla: La duración de un curso deberá ser mayor que cero
+        if (isNaN(duration) || duration <= 0) {
+            throw new BadRequestError('La duración del curso deberá ser mayor que cero.');
+        }
+
+        // RF 03: Aceptar los niveles Básico, Intermedio y Avanzado
+        const normalizedLevel = this._normalizeLevel(data.level);
+        if (!normalizedLevel) {
+            throw new BadRequestError(`Nivel inválido. Los niveles permitidos son: ${VALID_LEVELS.join(', ')}.`);
+        }
+
+        return {
+            title,
+            description,
+            duration,
+            level: normalizedLevel,
+            category: (data.category || 'General').trim()
         };
-
-        const createdCourse = await this.courseRepository.create(initialCourseData);
-        logger.info(`Curso '${createdCourse.title}' creado en MongoDB con ID: ${createdCourse._id}. Iniciando ingesta a n8n...`);
-
-        try {
-            // 3. Retransmisión del buffer PDF hacia el Webhook de n8n (Cerebro IA / Qdrant)
-            await this.recommendationService.processCoursePdf(
-                createdCourse._id,
-                file.buffer,
-                file.originalname,
-                file.mimetype,
-                {
-                    title: createdCourse.title,
-                    category: createdCourse.category,
-                    level: createdCourse.level,
-                    graphNodeId: createdCourse.graphNodeId
-                }
-            );
-
-            // 4. Actualización del curso a estado ACTIVO tras la ingesta exitosa
-            const activeCourse = await this.courseRepository.updateById(createdCourse._id, {
-                status: 'ACTIVO'
-            });
-
-            logger.info(`Ingesta vectorial finalizada en n8n. Curso ID: ${createdCourse._id} marcado como ACTIVO.`);
-            return activeCourse;
-        } catch (error) {
-            logger.error(`Fallo en la ingesta vectorial para el curso ID: ${createdCourse._id}. Marcando como ERROR_INGESTA.`, error.message);
-
-            await this.courseRepository.updateById(createdCourse._id, {
-                status: 'ERROR_INGESTA',
-                ingestError: error.message
-            });
-
-            throw error;
-        }
     }
 
     /**
-     * Obtiene un curso por su ID garantizando su existencia.
-     * ID del curso en MongoDB.
-     * 
+     * Normaliza los niveles tolerando acentos y mayúsculas/minúsculas
+     * @private
+     */
+    _normalizeLevel(level) {
+        if (!level) return null;
+        const clean = level.trim().toLowerCase();
+        if (clean === 'básico' || clean === 'basico') return 'Básico';
+        if (clean === 'intermedio') return 'Intermedio';
+        if (clean === 'avanzado') return 'Avanzado';
+        return null;
+    }
+
+    /**
+     * Registra un curso cumpliendo todas las reglas del RF 03 y coordina con n8n/Qdrant
+     */
+    async createCourse(courseDto, file = null) {
+        // 1. Validar reglas de negocio estrictas
+        const validated = this._validateCourseData(courseDto);
+
+        const initialCourseData = {
+            title: validated.title,
+            name: validated.title, // Compatibilidad con endpoints
+            description: validated.description,
+            category: validated.category,
+            level: validated.level,
+            durationHours: validated.duration,
+            duration: validated.duration,
+            graphNodeId: courseDto.graphNodeId || null,
+            isVisible: true,
+            status: 'ACTIVO',
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        // 2. Persistir en base de datos
+        const createdCourse = await this.courseRepository.create(initialCourseData);
+        logger.info(`Curso '${createdCourse.title}' creado exitosamente con ID: ${createdCourse._id}`);
+
+        // 3. Si se adjuntó PDF, procesarlo hacia n8n/Qdrant
+        if (file && file.buffer) {
+            if (file.mimetype !== 'application/pdf') {
+                throw new BadRequestError('El archivo adjunto debe ser de tipo PDF (application/pdf).');
+            }
+
+            try {
+                await this.recommendationService.processCoursePdf(
+                    createdCourse._id,
+                    file.buffer,
+                    file.originalname,
+                    file.mimetype,
+                    {
+                        title: createdCourse.title,
+                        category: createdCourse.category,
+                        level: createdCourse.level,
+                        graphNodeId: createdCourse.graphNodeId
+                    }
+                );
+                logger.info(`Ingesta vectorial finalizada en n8n para el curso: ${createdCourse._id}`);
+            } catch (error) {
+                logger.error(`Fallo en la ingesta vectorial para el curso ID: ${createdCourse._id}`, error.message);
+                // No rompemos la transacción completa, pero dejamos registro
+                await this.courseRepository.updateById(createdCourse._id, {
+                    ingestError: error.message
+                });
+            }
+        }
+
+        return createdCourse;
+    }
+
+    /**
+     * Obtiene un curso por ID garantizando existencia (RF 03)
      */
     async getCourseById(courseId) {
         const course = await this.courseRepository.findById(courseId);
         if (!course) {
-            throw new AppError('El curso solicitado no existe o ha sido eliminado.', 404);
+            throw new NotFoundError('El curso solicitado no existe o ha sido desactivado.');
         }
         return course;
     }
 
     /**
-     * Consulta el catálogo de cursos aplicando reglas de visibilidad por rol.
-     *  Filtros de categoría y nivel.
-     *  Rol del usuario que realiza la consulta ('student' o 'admin').
-     *  Límite de paginación.
-     * Número de página.
+     * Alias para compatibilidad con CourseController.getAllCourses (RF 04)
      */
-    async getCourses(filters = {}, userRole = 'student', limit = 20, page = 1) {
+    async getAllCourses(filters = {}, userRole = 'student') {
+        return this.getCourses(filters, userRole);
+    }
+
+    /**
+     * Consulta el catálogo de cursos activos con soporte de filtros (RF 04)
+     * Regla: Solo los cursos activos podrán mostrarse a estudiantes
+     */
+    async getCourses(filters = {}, userRole = 'student', limit = 50, page = 1) {
         const query = {};
 
-        // Filtros dinámicos por categoría y nivel
-        if (filters.category) query.category = filters.category.trim();
-        if (filters.level) query.level = filters.level.trim().toUpperCase();
+        // Filtro por categoría
+        if (filters.category && filters.category.trim() !== '') {
+            query.category = filters.category.trim();
+        }
 
-        // Regla de negocio: Los estudiantes solo pueden ver cursos visibles y activos
+        // Filtro por nivel normalizado
+        if (filters.level && filters.level.trim() !== '') {
+            const normalized = this._normalizeLevel(filters.level);
+            if (normalized) query.level = normalized;
+        }
+
+        // RF 04: Mostrar únicamente cursos activos a estudiantes
         if (userRole !== 'admin') {
             query.isVisible = true;
             query.status = 'ACTIVO';
@@ -123,46 +172,51 @@ export default class CourseService {
     }
 
     /**
-     * Actualiza parcialmente la información de un curso.
-     * @param {string} courseId - ID del curso.
-     * @param {UpdateCourseDTO} updateDto - DTO con campos validados a modificar.
-     * @returns {Promise<Object>}
+     * Actualiza información de un curso validando existencia y reglas de negocio
      */
     async updateCourse(courseId, updateDto) {
-        await this.getCourseById(courseId); // Verifica existencia previa
-
-        const updatedCourse = await this.courseRepository.updateById(courseId, { ...updateDto });
-        logger.info(`Curso ID: ${courseId} actualizado correctamente.`);
-
-        return updatedCourse;
-    }
-
-    /**
-     * Modifica el estado de visibilidad pública de un curso para los estudiantes.
-     * @param {string} courseId - ID del curso.
-     * @param {boolean} isVisible - Estado de visibilidad.
-     * @returns {Promise<Object>}
-     */
-    async changeCourseVisibility(courseId, isVisible) {
         await this.getCourseById(courseId);
 
-        const updatedCourse = await this.courseRepository.updateById(courseId, { isVisible });
-        logger.info(`Visibilidad del curso ID: ${courseId} modificada a: ${isVisible}`);
+        // Si se actualizan campos críticos, validar reglas
+        if (updateDto.duration !== undefined || updateDto.durationHours !== undefined) {
+            const dur = Number(updateDto.durationHours ?? updateDto.duration);
+            if (isNaN(dur) || dur <= 0) {
+                throw new BadRequestError('La duración del curso deberá ser mayor que cero.');
+            }
+        }
 
+        if (updateDto.level) {
+            const normalized = this._normalizeLevel(updateDto.level);
+            if (!normalized) {
+                throw new BadRequestError(`Nivel inválido. Los niveles permitidos son: ${VALID_LEVELS.join(', ')}.`);
+            }
+            updateDto.level = normalized;
+        }
+
+        const updatedCourse = await this.courseRepository.updateById(courseId, {
+            ...updateDto,
+            updatedAt: new Date()
+        });
+
+        logger.info(`Curso ID: ${courseId} actualizado correctamente.`);
         return updatedCourse;
     }
 
     /**
-     * Elimina un curso de la base de datos de persistencia.
-     * @param {string} courseId - ID del curso.
-     * @returns {Promise<boolean>}
+     * Desactiva un curso lógicamente (RF 03 y Reglas de Negocio)
+     * Regla: No se borra físicamente para preservar la integridad de las recomendaciones
      */
     async deleteCourse(courseId) {
         await this.getCourseById(courseId);
 
-        const deleted = await this.courseRepository.deleteById(courseId);
-        logger.info(`Curso ID: ${courseId} eliminado del sistema.`);
+        // Desactivación lógica
+        const deactivatedCourse = await this.courseRepository.updateById(courseId, {
+            isVisible: false,
+            status: 'INACTIVO',
+            updatedAt: new Date()
+        });
 
-        return deleted;
+        logger.info(`Curso ID: ${courseId} desactivado lógicamente del catálogo.`);
+        return deactivatedCourse;
     }
 }
