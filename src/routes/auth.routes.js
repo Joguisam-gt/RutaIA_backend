@@ -1,32 +1,40 @@
+// src/routes/auth.routes.js
 import { Router } from 'express';
-import { AuthController } from '../controllers/auth.controller.js';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
+import authController from '../controllers/auth.controller.js';
+import { AuthMiddleware } from '../middlewares/auth.middleware.js';
 
-const router = Router();
-const authController = new AuthController();
+class AuthRoutes {
+    constructor() {
+        this.router = Router();
+        this.initializeRoutes();
+    }
 
-/**
- * @route   POST /api/v1/auth/login
- * @desc    Autentica usuarios y devuelve JWT
- */
-router.post('/login', authController.login);
+    initializeRoutes() {
+        /**
+         * @route   POST /api/v1/auth/login
+         * @desc    Inicia sesión y genera token JWT
+         */
+        this.router.post('/login', authController.login);
 
-/**
- * @route   POST /api/v1/auth/register
- * @desc    Registra un estudiante en el sistema
- */
-router.post('/register', authController.register);
+        /**
+         * @route   POST /api/v1/auth/register
+         * @desc    Registra un nuevo estudiante (RF 01)
+         */
+        this.router.post('/register', authController.register);
 
-/**
- * @route   POST /api/v1/auth/logout
- * @desc    Cierra la sesión del usuario
- */
-router.post('/logout', authController.logout);
+        /**
+         * @route   GET /api/v1/auth/me
+         * @desc    Obtiene el perfil del estudiante autenticado
+         * @access  Privado (Requiere JWT)
+         */
+        this.router.get('/me', AuthMiddleware.authenticate, authController.getMe);
 
-/**
- * @route   GET /api/v1/auth/me
- * @desc    Obtiene los datos del usuario autenticado
- */
-router.get('/me', authMiddleware, authController.getMe);
+        /**
+         * @route   POST /api/v1/auth/logout
+         * @desc    Cierra la sesión activa
+         */
+        this.router.post('/logout', authController.logout);
+    }
+}
 
-export default router;
+export default new AuthRoutes().router;
