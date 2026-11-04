@@ -1,70 +1,42 @@
-import studentRepositoryInstance from '../repositories/student.repository.js';
-import StudentResponseDTO from '../dtos/students/studentResponse.dto.js';
-import BadRequestError from '../errors/badRequestError.js';
-import AppError from '../errors/appError.js';
-import logger from '../utils/logger.js';
+// src/services/student.service.js
+import { ObjectId } from 'mongodb';
+import Database from '../config/database.js';
 
-/**
- * Servicio orientado a objetos para la gestión de la lógica de negocio de estudiantes (SRP & DIP).
- * Valida la existencia previa de correos electrónicos y coordina el acceso a datos.
- */
 export default class StudentService {
-    /**
-     * Inyección de dependencias a través del constructor.
-     * Instancia del repositorio de estudiantes.
-     */
-    constructor(studentRepository = studentRepositoryInstance) {
-        this.studentRepository = studentRepository;
+    async getCertificates(studentId) {
+        const db = Database.getDb();
+        const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;
+        const certs = await db.collection('certificates').find({ studentId: sId }).toArray();
+        const courseIds = certs.map(c => c.courseId);
+        const courses = await db.collection('courses').find({ _id: { $in: courseIds } }).toArray();
+
+        return certs.map(cert => {
+            const course = courses.find(c => String(c._id) === String(cert.courseId));
+            const credential = cert.credentialId || cert.uuid || `CERT-${String(cert._id).substring(0, 8).toUpperCase()}`;
+            return {
+                id: String(cert._id),
+                uuid: credential,
+                credentialId: credential,
+                courseTitle: course?.title || 'Curso Certificado',
+                title: course?.title || 'Curso Certificado',
+                issueDate: cert.issueDate || new Date(),
+                studentName: 'José Rodríguez'
+            };
+        });
     }
 
-    /**
-     * Registra un nuevo estudiante verificando previamente que el email no esté duplicado.
-     * DTO validado con los datos del estudiante.
-     * DTO de respuesta sanitizado.
-     */
-    async registerStudent(studentDto) {
-        // 1. Verificación de duplicidad de correo electrónico
-        const existingStudent = await this.studentRepository.findByEmail(studentDto.email);
-        if (existingStudent) {
-            throw new BadRequestError(`El correo electrónico '${studentDto.email}' ya se encuentra registrado en la plataforma.`);
-        }
-
-        // 2. Preparación del documento para persistencia
-        const newStudentData = {
-            name: studentDto.name,
-            email: studentDto.email.toLowerCase().trim(),
-            level: studentDto.level,
-            areaOfInterest: studentDto.areaOfInterest,
-            role: 'student'
-        };
-
-        // 3. Persistencia en MongoDB
-        const createdStudent = await this.studentRepository.create(newStudentData);
-        logger.info(`Nuevo estudiante registrado exitosamente con ID: ${createdStudent._id}`);
-
-        // 4. Retorno de DTO de respuesta sin exponer datos sensibles de infraestructura
-        return StudentResponseDTO.fromEntity(createdStudent);
-    }
-
-    /**
-     * Obtiene la información del perfil del estudiante por su identificador único.
-     * ID del estudiante en MongoDB.
-     */
-    async getStudentById(studentId) {
-        const student = await this.studentRepository.findById(studentId);
-        if (!student) {
-            throw new AppError('El estudiante solicitado no existe o fue removido.', 404);
-        }
-        return StudentResponseDTO.fromEntity(student);
-    }
-
-    /**
-     * Obtiene el listado paginado de todos los estudiantes registrados.
-     * Cantidad de registros por página.
-     * Número de página.
-     */
-    async getAllStudents(limit = 20, page = 1) {
-        const students = await this.studentRepository.findAllStudents(limit, page);
-        return StudentResponseDTO.fromEntityList(students);
+    async getWishlist(studentId) {
+        const db = Database.getDb();
+        const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;
+        const wish = await db.collection('wishlists').findOne({ studentId: sId });
+        if (!wish || !wish.courseIds?.length) return [];
+        const courses = await db.collection('courses').find({ _id: { $in: wish.courseIds } }).toArray();
+        return courses.map(c => ({
+            id: String(c._id),
+            title: c.title,
+            category: c.category,
+            durationHours: c.durationHours,
+            thumbnail: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=500'
+        }));
     }
 }

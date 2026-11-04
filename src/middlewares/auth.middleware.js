@@ -1,38 +1,57 @@
 // src/middlewares/auth.middleware.js
-// Principio SRP (Single Responsibility Principle): Encapsula la verificación de autenticación basada en tokens JWT para proteger las rutas privadas de la API.
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET } from '../config/environment.js';
+import * as envModule from '../config/environment.js';
 import { AppError } from '../errors/appError.js';
 
-/**
- * Middleware para validar la presencia y firma del Token JWT en las peticiones entrantes.
- * @param {import('express').Request} req - Objeto de petición Express.
- * @param {import('express').Response} res - Objeto de respuesta Express.
- * @param {import('express').NextFunction} next - Función de paso al siguiente middleware/controlador.
- */
+const JWT_SECRET = 
+    envModule.JWT_SECRET || 
+    envModule.environment?.jwtSecret || 
+    process.env.JWT_SECRET || 
+    'rutaia_secret_jwt_key_2026';
+
 export const authMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return next(new AppError('No autorizado. Token no proporcionado.', 401));
+    }
+
+    const token = authHeader.split(' ')[1];
     try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new AppError('No se proporcionó un token de autenticación válido.', 401);
-        }
-
-        const token = authHeader.split(' ')[1];
-
-        // Verificación de la firma del token con el secreto del sistema
         const decoded = jwt.verify(token, JWT_SECRET);
-
-        // Asigna el usuario decodificado a la petición para ser consumido por controladores subsiguientes
         req.user = decoded;
         next();
     } catch (error) {
-        if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-            return next(new AppError('Token inválido o expirado. Por favor, inicia sesión nuevamente.', 401));
-        }
-        next(error);
+        return next(new AppError('Token inválido o expirado.', 401));
     }
 };
 
-// Exportación por defecto para mantener compatibilidad con sintaxis: import authMiddleware from '../middlewares/auth.middleware.js';
-export default authMiddleware;
+export const optionalAuthMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            req.user = decoded;
+        } catch {
+            // Permite el paso para usuarios anónimos
+        }
+    }
+    next();
+};
+
+export const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.role)) {
+            return next(new AppError('Acceso denegado. Permisos insuficientes.', 403));
+        }
+        next();
+    };
+};
+
+export class AuthMiddleware {
+    static authMiddleware = authMiddleware;
+    static optionalAuthMiddleware = optionalAuthMiddleware;
+    static authorize = authorize;
+}
+
+export default AuthMiddleware;

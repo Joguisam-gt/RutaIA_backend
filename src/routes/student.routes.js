@@ -1,32 +1,15 @@
+// src/routes/student.routes.js
 import { Router } from 'express';
 import StudentController from '../controllers/student.controller.js';
-import ValidatorMiddleware from '../middlewares/validator.middleware.js';
-import CreateStudentDTO from '../dtos/students/createStudent.dto.js';
-import AuthMiddleware from '../middlewares/auth.middleware.js';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 const studentController = new StudentController();
 
-// Registro público de estudiante
-router.post(
-    '/',
-    ValidatorMiddleware.validate(CreateStudentDTO),
-    studentController.register
-);
-
-// Obtener perfil del estudiante autenticado
-router.get(
-    '/profile',
-    AuthMiddleware.authenticate,
-    studentController.getProfile
-);
-
-// Listar todos los estudiantes (exclusivo Administrador)
-router.get(
-    '/',
-    AuthMiddleware.authenticate,
-    AuthMiddleware.authorize('admin'),
-    studentController.getAllStudents
-);
+router.get('/my-courses', authMiddleware, studentController.getMyCourses);
+router.get('/profile', authMiddleware, studentController.getProfile);
+router.get('/metrics', authMiddleware, studentController.getMetrics);
+router.get('/certificates', authMiddleware, studentController.getCertificates);
+router.get('/wishlist', authMiddleware, studentController.getWishlist);
 
 export default router;

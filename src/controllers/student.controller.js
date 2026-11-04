@@ -1,54 +1,48 @@
+// src/controllers/student.controller.js
 import StudentService from '../services/student.service.js';
 
 export default class StudentController {
     constructor(studentService = new StudentService()) {
         this.studentService = studentService;
-
-        this.register = this.register.bind(this);
-        this.getProfile = this.getProfile.bind(this);
-        this.getAllStudents = this.getAllStudents.bind(this);
     }
 
-    async register(req, res, next) {
+    getMyCourses = async (req, res, next) => {
         try {
-            const studentDto = req.body;
-            const newStudent = await this.studentService.registerStudent(studentDto);
+            const studentId = req.user.id || req.user._id;
+            const data = await this.studentService.getMyCourses(studentId, req.query);
+            res.json({ success: true, data });
+        } catch (e) { next(e); }
+    };
 
-            return res.status(201).json({
-                success: true,
-                message: 'Estudiante registrado exitosamente.',
-                data: newStudent
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    async getProfile(req, res, next) {
+    getMetrics = async (req, res, next) => {
         try {
-            const studentId = req.user.id;
-            const studentProfile = await this.studentService.getStudentById(studentId);
+            const studentId = req.user.id || req.user._id;
+            const data = await this.studentService.getStudentMetrics(studentId);
+            res.json({ success: true, data });
+        } catch (e) { next(e); }
+    };
 
-            return res.status(200).json({
-                success: true,
-                data: studentProfile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    async getAllStudents(req, res, next) {
+    getCertificates = async (req, res, next) => {
         try {
-            const { limit = 20, page = 1 } = req.query;
-            const studentsList = await this.studentService.getAllStudents(Number(limit), Number(page));
+            const studentId = req.user.id || req.user._id;
+            const data = await this.studentService.getCertificates(studentId);
+            res.json({ success: true, data });
+        } catch (e) { next(e); }
+    };
 
-            return res.status(200).json({
-                success: true,
-                data: studentsList
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
+    getWishlist = async (req, res, next) => {
+        try {
+            const studentId = req.user.id || req.user._id;
+            const data = await this.studentService.getWishlist(studentId);
+            res.json({ success: true, data });
+        } catch (e) { next(e); }
+    };
+
+    getProfile = async (req, res, next) => {
+        try {
+            const studentId = req.user.id || req.user._id;
+            const data = await this.studentService.getStudentById(studentId);
+            res.json({ success: true, data });
+        } catch (e) { next(e); }
+    };
 }
