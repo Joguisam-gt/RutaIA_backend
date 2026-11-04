@@ -3,18 +3,24 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ObjectId } from 'mongodb';
 import Database from '../config/database.js';
-import { JWT_SECRET } from '../config/environment.js';
+import { environment } from '../config/environment.js';
 import { AppError } from '../errors/appError.js';
+import { BadRequestError } from '../errors/badRequestError.js';
+import { NotFoundError } from '../errors/notFoundError.js';
+
+// Niveles permitidos estrictamente por el RF 01
+const ALLOWED_LEVELS = Object.freeze(['Principiante', 'Intermedio', 'Avanzado']);
 
 export class AuthService {
     /**
      * Valida credenciales e inicia sesión para estudiantes y administradores.
+     * @param {Object} credentials - { email, password }
      */
     async login({ email, password }) {
         const sanitizedEmail = (email || '').toLowerCase().trim();
 
         if (!sanitizedEmail || !password) {
-            throw new AppError('El correo electrónico y la contraseña son obligatorios.', 400);
+            throw new BadRequestError('El correo electrónico y la contraseña son obligatorios.');
         }
 
         const db = Database.getDb();
@@ -29,18 +35,8 @@ export class AuthService {
             throw new AppError('Credenciales inválidas. Contraseña incorrecta.', 401);
         }
 
-        // Firma del Token JWT
-        const token = jwt.sign(
-            {
-                id: String(user._id),
-                name: user.name,
-                email: user.email,
-                role: user.role || 'student',
-                level: user.level || 'PRINCIPIANTE'
-            },
-            JWT_SECRET || 'rutaia_secret_jwt_key_2026',
-            { expiresIn: '24h' }
-        );
+        // Generación del token sin secretos quemados en código
+        const token = this.generateToken(user);
 
         const { password: _, ...userWithoutPassword } = user;
 
@@ -54,30 +50,50 @@ export class AuthService {
     }
 
     /**
-     * Registra un nuevo estudiante cumpliendo con user.schema.json
+     * Registra un nuevo estudiante cumpliendo estrictamente con RF 01 y user.schema.json
+     * @param {Object} userData - Datos de registro
      */
     async register(userData) {
-        const { name, email, password, role = 'student', level = 'PRINCIPIANTE', areaOfInterest = 'Tecnología' } = userData;
+        const { 
+            name, 
+            email, 
+            password, 
+            role = 'student', 
+            level = 'Principiante', 
+            areaOfInterest 
+        } = userData;
 
         const sanitizedEmail = (email || '').toLowerCase().trim();
+        const trimmedName = (name || '').trim();
 
-        if (!name || name.trim().length < 2) {
-            throw new AppError('El nombre es obligatorio y debe contener al menos 2 caracteres.', 400);
+        // Validaciones de RF 01
+        if (!trimmedName || trimmedName.length < 2) {
+            throw new BadRequestError('El nombre completo es obligatorio y debe tener al menos 2 caracteres.');
         }
 
         if (!sanitizedEmail) {
-            throw new AppError('El correo electrónico es obligatorio.', 400);
+            throw new BadRequestError('El correo electrónico es obligatorio.');
         }
 
         if (!password || password.length < 6) {
-            throw new AppError('La contraseña debe tener al menos 6 caracteres.', 400);
+            throw new BadRequestError('La contraseña debe tener al menos 6 caracteres.');
+        }
+
+        // Validación estricta de niveles RF 01
+        if (!ALLOWED_LEVELS.includes(level)) {
+            throw new BadRequestError(`El nivel de experiencia debe ser uno de los siguientes: ${ALLOWED_LEVELS.join(', ')}.`);
+        }
+
+        if (!areaOfInterest || areaOfInterest.trim().length === 0) {
+            throw new BadRequestError('El área de interés es obligatoria.');
         }
 
         const db = Database.getDb();
         const existingUser = await db.collection('users').findOne({ email: sanitizedEmail });
 
+        // Regla de Negocio: Impedir correos duplicados
         if (existingUser) {
-            throw new AppError('Ya existe una cuenta registrada con este correo electrónico.', 400);
+            throw new BadRequestError('Ya existe un estudiante registrado con este correo electrónico.');
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -85,30 +101,19 @@ export class AuthService {
 
         const newUserDocument = {
             _id: new ObjectId(),
-            name: name.trim(),
+            name: trimmedName,
             email: sanitizedEmail,
             password: hashedPassword,
             role: role === 'admin' ? 'admin' : 'student',
-            level: ['PRINCIPIANTE', 'INTERMEDIO', 'AVANZADO'].includes(level) ? level : 'PRINCIPIANTE',
-            areaOfInterest: areaOfInterest || 'General',
+            level,
+            areaOfInterest: areaOfInterest.trim(),
             createdAt: now,
             updatedAt: now
         };
 
         await db.collection('users').insertOne(newUserDocument);
 
-        const token = jwt.sign(
-            {
-                id: String(newUserDocument._id),
-                name: newUserDocument.name,
-                email: newUserDocument.email,
-                role: newUserDocument.role,
-                level: newUserDocument.level
-            },
-            JWT_SECRET || 'rutaia_secret_jwt_key_2026',
-            { expiresIn: '24h' }
-        );
-
+        const token = this.generateToken(newUserDocument);
         const { password: _, ...createdUser } = newUserDocument;
 
         return {
@@ -121,7 +126,8 @@ export class AuthService {
     }
 
     /**
-     * Obtiene el perfil actual del usuario a partir del ID del Token JWT.
+     * Obtiene el perfil actual del usuario autenticado.
+     * @param {string} userId - ID del usuario proveniente del Token JWT
      */
     async getMe(userId) {
         if (!userId) {
@@ -143,13 +149,35 @@ export class AuthService {
         );
 
         if (!user) {
-            throw new AppError('Usuario no encontrado.', 404);
+            throw new NotFoundError('Estudiante o usuario no encontrado.');
         }
 
         return {
             id: String(user._id),
             ...user
         };
+    }
+
+    /**
+     * Centraliza la firma de JWT garantizando seguridad y trazabilidad.
+     * @private
+     */
+    generateToken(user) {
+        if (!environment.jwtSecret) {
+            throw new Error('Configuración crítica ausente: JWT_SECRET no está definido en las variables de entorno.');
+        }
+
+        return jwt.sign(
+            {
+                id: String(user._id),
+                name: user.name,
+                email: user.email,
+                role: user.role || 'student',
+                level: user.level
+            },
+            environment.jwtSecret,
+            { expiresIn: '24h' }
+        );
     }
 }
 
