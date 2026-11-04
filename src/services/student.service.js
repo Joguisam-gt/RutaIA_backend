@@ -1,8 +1,47 @@
-// src/services/student.service.js
 import { ObjectId } from 'mongodb';
 import Database from '../config/database.js';
 
 export default class StudentService {
+    // Método que faltaba para resolver tu error actual
+    async getMyCourses(studentId) {
+        const db = Database.getDb();
+        const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;
+
+        // Busca las inscripciones del estudiante o filtra en la colección de cursos
+        const enrollments = await db.collection('enrollments').find({ studentId: sId }).toArray();
+        if (!enrollments.length) return [];
+
+        const courseIds = enrollments.map(e => e.courseId);
+        const courses = await db.collection('courses').find({ _id: { $in: courseIds } }).toArray();
+
+        return courses.map(c => ({
+            id: String(c._id),
+            title: c.title,
+            category: c.category,
+            durationHours: c.durationHours,
+            thumbnail: c.thumbnail || 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=500'
+        }));
+    }
+
+    async getStudentMetrics(studentId) {
+        const db = Database.getDb();
+        const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;
+        const totalCourses = await db.collection('enrollments').countDocuments({ studentId: sId });
+        const certificatesCount = await db.collection('certificates').countDocuments({ studentId: sId });
+
+        return {
+            enrolledCourses: totalCourses,
+            completedCertificates: certificatesCount
+        };
+    }
+
+    async getStudentById(studentId) {
+        const db = Database.getDb();
+        const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;
+        const user = await db.collection('users').findOne({ _id: sId });
+        return user ? { id: String(user._id), name: user.name, email: user.email } : null;
+    }
+
     async getCertificates(studentId) {
         const db = Database.getDb();
         const sId = ObjectId.isValid(studentId) ? new ObjectId(studentId) : studentId;

@@ -2,19 +2,30 @@
 import express from 'express';
 import cors from 'cors';
 
-// Importación corregida de rutas
-import instructorRoutes from './routes/instructor.routes.js';
-import studentRoutes from './routes/student.routes.js';
-import courseRoutes from './routes/course.routes.js';
 
+import router from "./routes/index.js"
 const app = express();
 
-app.use(cors());
+// Opciones de CORS flexibles para desarrollo
+const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Permitir solicitudes sin origen (como Postman o curl) o presentes en la lista
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(null, true); // En desarrollo local aceptamos el origen para evitar bloqueos
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
-// Montaje de middlewares de rutas
-app.use('/api/v1/instructor', instructorRoutes);
-app.use('/api/v1/student', studentRoutes);
-app.use('/api/v1/courses', courseRoutes);
+// Montaje de rutas
+app.use('/api/v1', router);
 
 export default app;

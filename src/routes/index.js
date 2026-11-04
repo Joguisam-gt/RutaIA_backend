@@ -14,4 +14,5 @@ router.use('/student', studentRoutes);
 router.use('/courses', courseRoutes);
 router.use('/metrics', metricRoutes);
 
+
 export default router;
