@@ -1,22 +1,23 @@
-// src/controllers/student.controller.js
 import StudentService from '../services/student.service.js';
 
 export default class StudentController {
-    constructor(studentService = new StudentService()) {
+    constructor(studentService) {
         this.studentService = studentService;
     }
 
     getMyCourses = async (req, res, next) => {
         try {
-            const studentId = req.user.id || req.user._id;
-            const data = await this.studentService.getMyCourses(studentId, req.query);
-            res.json({ success: true, data });
-        } catch (e) { next(e); }
+            const studentId = req.user?.id || req.user?._id;
+            const courses = await this.studentService.getMyCourses(studentId);
+            return res.status(200).json({ success: true, data: courses });
+        } catch (error) {
+            next(error);
+        }
     };
 
     getMetrics = async (req, res, next) => {
         try {
-            const studentId = req.user.id || req.user._id;
+            const studentId = req.user?.id || req.user?._id;
             const data = await this.studentService.getStudentMetrics(studentId);
             res.json({ success: true, data });
         } catch (e) { next(e); }
@@ -24,7 +25,7 @@ export default class StudentController {
 
     getCertificates = async (req, res, next) => {
         try {
-            const studentId = req.user.id || req.user._id;
+            const studentId = req.user?.id || req.user?._id;
             const data = await this.studentService.getCertificates(studentId);
             res.json({ success: true, data });
         } catch (e) { next(e); }
@@ -32,7 +33,7 @@ export default class StudentController {
 
     getWishlist = async (req, res, next) => {
         try {
-            const studentId = req.user.id || req.user._id;
+            const studentId = req.user?.id || req.user?._id;
             const data = await this.studentService.getWishlist(studentId);
             res.json({ success: true, data });
         } catch (e) { next(e); }
@@ -40,7 +41,7 @@ export default class StudentController {
 
     getProfile = async (req, res, next) => {
         try {
-            const studentId = req.user.id || req.user._id;
+            const studentId = req.user?.id || req.user?._id;
             const data = await this.studentService.getStudentById(studentId);
             res.json({ success: true, data });
         } catch (e) { next(e); }
