@@ -1,11 +1,33 @@
 // src/routes/metric.routes.js
 import { Router } from 'express';
-import MetricController from '../controllers/metric.controller.js';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
+import metricController from '../controllers/metric.controller.js';
+import { AuthMiddleware } from '../middlewares/auth.middleware.js';
 
-const router = Router();
-const metricController = new MetricController();
+class MetricRoutes {
+    constructor() {
+        this.router = Router();
+        this.initializeRoutes();
+    }
 
-router.get('/student', authMiddleware, metricController.getStudentMetrics);
+    initializeRoutes() {
+        /**
+         * @route   GET /api/v1/metrics
+         * @desc    Obtiene las estadísticas básicas de la plataforma (RF 18)
+         * @access  Público / Swagger
+         */
+        this.router.get('/', metricController.getPlatformMetrics);
 
-export default router;
+        /**
+         * @route   GET /api/v1/metrics/student
+         * @desc    Métricas personales del estudiante autenticado
+         * @access  Privado (Estudiantes)
+         */
+        this.router.get(
+            '/student', 
+            AuthMiddleware.authenticate, 
+            metricController.getStudentMetrics
+        );
+    }
+}
+
+export default new MetricRoutes().router;
