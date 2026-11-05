@@ -1,15 +1,57 @@
 // src/routes/course.routes.js
 import { Router } from 'express';
-import CourseController from '../controllers/course.controller.js';
-import { authMiddleware, authorize } from '../middlewares/auth.middleware.js';
+import courseController from '../controllers/course.controller.js';
+import { AuthMiddleware } from '../middlewares/auth.middleware.js';
 
-const router = Router();
-const courseController = new CourseController();
+class CourseRoutes {
+    constructor() {
+        this.router = Router();
+        this.initializeRoutes();
+    }
 
-router.get('/', courseController.getAllCourses);
-router.get('/:id', courseController.getCourseById);
-router.post('/', authMiddleware, authorize('admin'), courseController.createCourse);
-router.put('/:id', authMiddleware, authorize('admin'), courseController.updateCourse);
-router.delete('/:id', authMiddleware, authorize('admin'), courseController.deleteCourse);
+    initializeRoutes() {
+        // Catalogo publico con filtros opcionales
+        this.router.get(
+            '/', 
+            AuthMiddleware.optionalAuthenticate, 
+            courseController.getAllCourses
+        );
 
-export default router;
+        // Endpoint de Grafo (Debe registrarse ANTES de /:id para evitar colisiones)
+        this.router.get(
+            '/graph', 
+            courseController.getCourseGraph
+        );
+
+        // Detalle de un curso
+        this.router.get(
+            '/:id', 
+            AuthMiddleware.optionalAuthenticate, 
+            courseController.getCourseById
+        );
+
+        // Operaciones administrativas
+        this.router.post(
+            '/', 
+            AuthMiddleware.authenticate, 
+            AuthMiddleware.authorize('admin'), 
+            courseController.createCourse
+        );
+
+        this.router.put(
+            '/:id', 
+            AuthMiddleware.authenticate, 
+            AuthMiddleware.authorize('admin'), 
+            courseController.updateCourse
+        );
+
+        this.router.delete(
+            '/:id', 
+            AuthMiddleware.authenticate, 
+            AuthMiddleware.authorize('admin'), 
+            courseController.deleteCourse
+        );
+    }
+}
+
+export default new CourseRoutes().router;

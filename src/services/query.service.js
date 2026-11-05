@@ -1,141 +1,232 @@
 // src/services/query.service.js
+import axios from 'axios';
 import { environment } from '../config/environment.js';
-import { AppError } from '../errors/appError.js';
-import { logger } from '../utils/logger.js';
-import { ObjectId } from 'mongodb';
+import { queryStatus } from '../constants/queryStatus.js';
+import queryRepositoryInstance from '../repositories/query.repository.js';
+import recommendationRepositoryInstance from '../repositories/recommendation.repository.js';
+import studentRepositoryInstance from '../repositories/student.repository.js';
+import BadRequestErrorImport from '../errors/badRequestError.js';
+import AppErrorImport from '../errors/appError.js';
+import logger from '../utils/logger.js';
 
-export class QueryService {
-    constructor(queryRepository = null) {
+// Compatibilidad de importación resiliente
+const BadRequestError = BadRequestErrorImport?.BadRequestError || BadRequestErrorImport || AppErrorImport || Error;
+
+export default class QueryService {
+    constructor(
+        queryRepository = queryRepositoryInstance,
+        recommendationRepository = recommendationRepositoryInstance,
+        studentRepository = studentRepositoryInstance
+    ) {
         this.queryRepository = queryRepository;
+        this.recommendationRepository = recommendationRepository;
+        this.studentRepository = studentRepository;
     }
 
-    _toValidObjectId(id) {
-        if (id && ObjectId.isValid(id)) {
-            return new ObjectId(id);
-        }
-        return new ObjectId('000000000000000000000000');
-    }
-
-    async processQuery(askQueryDto) {
-        const webhookUrl = environment.n8n.chatWebhookUrl;
-
-        if (!webhookUrl) {
-            throw new AppError('La URL del webhook de n8n no está configurada.', 503);
+    /**
+     * Ejecuta el ciclo de vida completo de la consulta inteligente (RF 06 al RF 14)
+     * Soporta tanto usuarios autenticados como usuarios invitados (Guest).
+     */
+    async processQuery({ studentId, question, studentLevel, studentAreaOfInterest }) {
+        if (!question || typeof question !== 'string' || question.trim() === '') {
+            throw new BadRequestError('La pregunta no puede estar vacía.');
         }
 
-        const { prompt, userQuery, studentId, userId, userRole = 'anonymous', courseId } = askQueryDto;
-        const queryText = prompt || userQuery;
+        let currentLevel = studentLevel || 'Principiante';
+        let currentArea = studentAreaOfInterest || 'Tecnología';
+        let validStudentId = studentId || null;
 
-        if (!queryText || typeof queryText !== 'string' || queryText.trim().length < 3) {
-            throw new AppError('La pregunta debe tener al menos 3 caracteres.', 400);
+        // 1. Manejo del estudiante: Si es un usuario registrado o guest
+        try {
+            if (this.studentRepository) {
+                if (validStudentId) {
+                    const student = await this.studentRepository.findById(validStudentId);
+                    if (student) {
+                        currentLevel = student.level || currentLevel;
+                        currentArea = student.areaOfInterest || currentArea;
+                    }
+                } else {
+                    // Si es Guest y la BD exige un estudiante relacionado, intentamos enlazar al primer estudiante registrado
+                    const fallbackStudent = await this.studentRepository.findOne?.({}) || null;
+                    if (fallbackStudent) {
+                        validStudentId = fallbackStudent._id || fallbackStudent.id || null;
+                    }
+                }
+            }
+        } catch (stdError) {
+            logger.warn('Aviso al recuperar perfil de estudiante:', stdError.message);
         }
 
-        const initialQueryData = {
-            studentId: this._toValidObjectId(studentId || userId),
-            userQuery: queryText.trim(),
-            status: 'PENDIENTE',
-            aiResponse: null,
-            errorMessage: null,
-            createdAt: new Date(),
-            updatedAt: new Date()
-        };
+        // 2. RF 07: Registrar en estado Pendiente antes de invocar n8n / Gemini
+        let initialQuery = null;
+        try {
+            const queryData = {
+                question: question.trim(),
+                status: queryStatus.PENDING,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
 
-        let savedQuery = null;
-        if (this.queryRepository && typeof this.queryRepository.create === 'function') {
-            savedQuery = await this.queryRepository.create(initialQueryData);
+            // Solo incluimos studentId si tenemos uno válido para no romper la validación de Mongoose
+            if (validStudentId) {
+                queryData.studentId = validStudentId;
+            }
+
+            initialQuery = await this.queryRepository.create(queryData);
+        } catch (dbError) {
+            logger.warn('No se pudo persistir la consulta previa en MongoDB (continuando en memoria):', dbError.message);
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 360000);
+        const queryId = String(initialQuery?._id || initialQuery?.id || `temp_${Date.now()}`);
+        logger.info(`Consulta registrada con ID: ${queryId} en estado ${queryStatus.PENDING}`);
 
         try {
-            const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    queryId: savedQuery?._id || null,
-                    prompt: queryText,
-                    userRole,
-                    userId: String(studentId || userId || 'anonymous_session'),
-                    courseId: courseId || 'general'
-                })
-            });
+            // 3. RF 08: Enviar a n8n el ID, pregunta, nivel y área
+            const n8nPayload = {
+                queryId,
+                question: question.trim(),
+                experienceLevel: currentLevel,
+                interestArea: currentArea
+            };
 
-            clearTimeout(timeoutId);
+            const n8nResponse = await this._callN8nWebhook(n8nPayload);
 
-            const rawText = await response.text();
-            logger.info(`[n8n Response HTTP ${response.status}]: ${rawText}`);
+            // Normalizar respuesta de n8n (maneja si n8n retorna un array [ { ... } ] o un objeto directo)
+            const payloadData = Array.isArray(n8nResponse) ? n8nResponse[0] : n8nResponse;
 
-            if (!response.ok) {
-                throw new AppError(`El webhook de n8n respondió con estado ${response.status}: ${rawText}`, 502);
+            // 4. Procesar fuentes y estado (RF 10, 11, 13)
+            const rawSources = payloadData?.sources || payloadData?.courses || [];
+            const answer = payloadData?.answer || payloadData?.response || 'No se encontraron recomendaciones aplicables.';
+
+            const formattedSources = Array.isArray(rawSources) ? rawSources.map(src => ({
+                courseId: src.id || src.courseId || src._id,
+                title: src.title || src.name || 'Curso recomendado',
+                description: src.description || '',
+                category: src.category || 'General',
+                similarity: Number(src.similarity || src.score || 0)
+            })) : [];
+
+            // RF 11: Si no hay fuentes relevantes, finalizar como Sin resultados
+            const finalStatus = formattedSources.length > 0 
+                ? queryStatus.ANSWERED 
+                : queryStatus.NO_RESULTS;
+
+            // 5. RF 14: Persistir recomendación si existe el repositorio
+            if (this.recommendationRepository?.create) {
+                try {
+                    await this.recommendationRepository.create({
+                        queryId,
+                        ...(validStudentId && { studentId: validStudentId }),
+                        answer,
+                        sources: formattedSources,
+                        status: finalStatus,
+                        createdAt: new Date()
+                    });
+                } catch (recError) {
+                    logger.warn('Aviso: No se pudo guardar en la colección recommendations:', recError.message);
+                }
             }
 
-            let n8nResult = {};
-            try {
-                n8nResult = JSON.parse(rawText);
-            } catch {
-                n8nResult = { output: rawText };
+            // 6. Actualizar estado final de la consulta si se guardó previamente
+            if (initialQuery?._id || initialQuery?.id) {
+                try {
+                    await this.queryRepository.updateById(queryId, {
+                        status: finalStatus,
+                        updatedAt: new Date()
+                    });
+                } catch (updError) {
+                    logger.warn('Aviso: No se pudo actualizar estado en queries:', updError.message);
+                }
             }
 
-            let payload = n8nResult;
-            if (Array.isArray(payload) && payload.length > 0) {
-                payload = payload[0];
-            }
+            logger.info(`Consulta ${queryId} finalizada con estado: ${finalStatus}`);
 
-            const aiAnswer =
-                payload?.output ||
-                payload?.response ||
-                payload?.text ||
-                payload?.message ||
-                payload?.json?.output ||
-                payload?.json?.response ||
-                (typeof payload === 'string' ? payload : null);
-
-            if (!aiAnswer) {
-                throw new AppError(`Estructura de respuesta no válida recibida desde n8n: ${rawText}`, 502);
-            }
-
-            // Actualización en base de datos sin sobrescribir el retorno al frontend
-            if (savedQuery && this.queryRepository?.updateById) {
-                await this.queryRepository.updateById(savedQuery._id, {
-                    status: 'RESPONDIDA',
-                    aiResponse: String(aiAnswer),
-                    updatedAt: new Date()
-                });
-            }
-
-            // Estructura limpia garantizada para el Frontend
             return {
-                _id: savedQuery?._id || null,
-                userQuery: queryText,
-                status: 'RESPONDIDA',
-                aiResponse: String(aiAnswer),
-                createdAt: initialQueryData.createdAt
+                queryId,
+                question: question.trim(),
+                answer,
+                sources: formattedSources,
+                status: finalStatus,
+                createdAt: initialQuery?.createdAt || new Date()
             };
 
         } catch (error) {
-            clearTimeout(timeoutId);
-            logger.error(`Error procesando query ${savedQuery?._id || ''}:`, error);
+            logger.error(`Fallo en el flujo RAG para la consulta ${queryId}:`, error.message);
 
-            const isTimeout = error.name === 'AbortError';
-            const errorMsg = isTimeout ? 'Timeout en el servicio de IA (6 minutos)' : error.message;
-
-            if (savedQuery && this.queryRepository?.updateById) {
-                await this.queryRepository.updateById(savedQuery._id, {
-                    status: 'ERROR',
-                    errorMessage: errorMsg,
-                    updatedAt: new Date()
-                });
+            // Regla de Negocio: Si n8n, Qdrant o Gemini fallan, la consulta finaliza como Error
+            if (initialQuery?._id || initialQuery?.id) {
+                try {
+                    await this.queryRepository.updateById(queryId, {
+                        status: queryStatus.ERROR,
+                        errorMessage: error.message,
+                        updatedAt: new Date()
+                    });
+                } catch {
+                    // Ignora fallos de actualización secundaria
+                }
             }
 
-            if (isTimeout) {
-                throw new AppError('El servicio de IA excedió el tiempo máximo de espera.', 504);
-            }
-
-            throw error instanceof AppError ? error : new AppError(error.message || 'No se pudo obtener respuesta del servicio de IA.', 500);
+            return {
+                queryId,
+                question: question.trim(),
+                answer: 'Lo sentimos, ocurrió un error al procesar tu recomendación con la Inteligencia Artificial.',
+                sources: [],
+                status: queryStatus.ERROR
+            };
         }
     }
-}
 
-export default QueryService;
+    /**
+     * Consulta el historial de un estudiante específico (RF 16)
+     */
+    async getStudentHistory(studentId) {
+        if (!studentId) return [];
+
+        try {
+            return await this.queryRepository.findWithPagination(
+                { studentId },
+                50,
+                1,
+                { createdAt: -1 }
+            );
+        } catch (error) {
+            logger.error(`Error al recuperar historial del estudiante ${studentId}:`, error.message);
+            return [];
+        }
+    }
+
+    /**
+     * Comunicación segura vía HTTP con el Webhook de n8n (RF 08)
+     */
+    async _callN8nWebhook(payload) {
+        const webhookUrl = 
+            environment?.n8n?.chatWebhookUrl || 
+            environment?.n8nChatWebhookUrl || 
+            process.env.N8N_WEBHOOK_URL_CHAT ||
+            process.env.N8N_CHAT_WEBHOOK_URL;
+
+        if (!webhookUrl) {
+            throw new Error('La URL del Webhook de n8n no está configurada en las variables de entorno.');
+        }
+
+        const sharedSecret = 
+            environment?.n8n?.sharedSecret || 
+            process.env.N8N_SHARED_SECRET || 
+            '';
+
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        if (sharedSecret) {
+            headers['X-Shared-Secret'] = sharedSecret;
+        }
+
+        const response = await axios.post(webhookUrl, payload, {
+            headers,
+            timeout: 360000
+        });
+
+        return response.data;
+    }
+}

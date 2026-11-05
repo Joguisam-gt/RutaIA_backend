@@ -1,15 +1,42 @@
 // src/controllers/course.controller.js
 import CourseService from '../services/course.service.js';
 
-export default class CourseController {
+export class CourseController {
     constructor(courseService = new CourseService()) {
         this.courseService = courseService;
     }
 
     getAllCourses = async (req, res, next) => {
         try {
-            const courses = await this.courseService.getAllCourses();
-            return res.status(200).json({ success: true, data: courses });
+            const { category, level, status } = req.query;
+            const filters = { category, level, status };
+            const userRole = req.user?.role || 'guest';
+
+            const courses = await this.courseService.getAllCourses(filters, userRole);
+
+            return res.status(200).json({
+                success: true,
+                count: courses.length,
+                roleDetected: userRole,
+                data: courses
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Obtiene la estructura de grafo para la pestaña de Administrador
+     * GET /api/v1/courses/graph
+     */
+    getCourseGraph = async (req, res, next) => {
+        try {
+            const graphData = await this.courseService.getCourseGraph();
+            return res.status(200).json({
+                success: true,
+                message: 'Grafo de cursos obtenido exitosamente.',
+                data: graphData
+            });
         } catch (error) {
             next(error);
         }
@@ -18,7 +45,10 @@ export default class CourseController {
     getCourseById = async (req, res, next) => {
         try {
             const course = await this.courseService.getCourseById(req.params.id);
-            return res.status(200).json({ success: true, data: course });
+            return res.status(200).json({
+                success: true,
+                data: course
+            });
         } catch (error) {
             next(error);
         }
@@ -27,7 +57,11 @@ export default class CourseController {
     createCourse = async (req, res, next) => {
         try {
             const newCourse = await this.courseService.createCourse(req.body);
-            return res.status(201).json({ success: true, data: newCourse });
+            return res.status(201).json({
+                success: true,
+                message: 'Curso creado exitosamente.',
+                data: newCourse
+            });
         } catch (error) {
             next(error);
         }
@@ -36,7 +70,11 @@ export default class CourseController {
     updateCourse = async (req, res, next) => {
         try {
             const updated = await this.courseService.updateCourse(req.params.id, req.body);
-            return res.status(200).json({ success: true, data: updated });
+            return res.status(200).json({
+                success: true,
+                message: 'Curso actualizado exitosamente.',
+                data: updated
+            });
         } catch (error) {
             next(error);
         }
@@ -44,10 +82,16 @@ export default class CourseController {
 
     deleteCourse = async (req, res, next) => {
         try {
-            await this.courseService.deleteCourse(req.params.id);
-            return res.status(200).json({ success: true, message: 'Curso eliminado.' });
+            const result = await this.courseService.deleteCourse(req.params.id);
+            return res.status(200).json({
+                success: true,
+                message: 'Curso desactivado correctamente.',
+                data: result
+            });
         } catch (error) {
             next(error);
         }
     };
 }
+
+export default new CourseController();

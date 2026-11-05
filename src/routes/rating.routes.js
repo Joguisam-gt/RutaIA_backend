@@ -1,25 +1,26 @@
 // src/routes/rating.routes.js
 import { Router } from 'express';
-import RatingController from '../controllers/rating.controller.js';
-import ValidatorMiddleware from '../middlewares/validator.middleware.js';
-import CreateRatingDTO from '../dtos/rating/createRating.dto.js';
-import AuthMiddleware from '../middlewares/auth.middleware.js';
+import ratingController from '../controllers/rating.controller.js';
+import { AuthMiddleware } from '../middlewares/auth.middleware.js';
 
-const router = Router();
-const ratingController = new RatingController();
+class RatingRoutes {
+    constructor() {
+        this.router = Router();
+        this.initializeRoutes();
+    }
 
-// Registrar o actualizar calificación de un curso
-router.post(
-    '/',
-    AuthMiddleware.authenticate,
-    ValidatorMiddleware.validate(CreateRatingDTO),
-    ratingController.createOrUpdateRating
-);
+    initializeRoutes() {
+        /**
+         * @route   POST /api/v1/ratings
+         * @desc    Califica una recomendación de la IA (RF 17)
+         * @access  Privado (Requiere autenticación de estudiante)
+         */
+        this.router.post(
+            '/', 
+            AuthMiddleware.authenticate, 
+            ratingController.rate
+        );
+    }
+}
 
-// Obtener lista de reseñas de un curso
-router.get('/course/:courseId', ratingController.getCourseRatings);
-
-// Obtener estadísticas consolidadas de un curso
-router.get('/course/:courseId/stats', ratingController.getCourseRatingStats);
-
-export default router;
+export default new RatingRoutes().router;
