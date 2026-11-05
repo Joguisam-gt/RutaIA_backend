@@ -4,9 +4,10 @@ dotenv.config();
 
 class Environment {
   constructor() {
+    this.nodeEnv = process.env.NODE_ENV || 'development';
     this.port = Number(process.env.PORT) || 3000;
     
-    // Soporta ambos nombres de variable para evitar fallos tontos de tipografía
+    // Soporte para ambos nombres de variable
     this.mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/rutaia';
     this.mongoDbName = process.env.MONGO_DB_NAME || 'rutaia';
 
@@ -19,7 +20,7 @@ class Environment {
     this.qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
     this.qdrantApiKey = process.env.QDRANT_API_KEY || '';
 
-    // Agrupación anidada para clientes específicos (Database y n8n)
+    // Agrupacion para clientes
     this.mongo = {
       uri: this.mongoUri,
       dbName: this.mongoDbName
@@ -31,16 +32,15 @@ class Environment {
       sharedSecret: this.n8nSharedSecret
     };
 
-    // Congelamos la instancia para evitar modificaciones accidentales en tiempo de ejecución
     Object.freeze(this);
   }
 }
 
-// Instancia única (Singleton)
 export const environment = new Environment();
 
-// Exportaciones individuales para mantener retrocompatibilidad
+// Exportaciones individuales para compatibilidad
 export const {
+  NODE_ENV,
   PORT,
   MONGO_URI,
   MONGO_DB_NAME,
@@ -51,6 +51,9 @@ export const {
   N8N_SHARED_SECRET,
   QDRANT_URL,
   QDRANT_API_KEY
-} = environment;
+} = {
+  NODE_ENV: environment.nodeEnv,
+  ...environment
+};
 
 export default environment;

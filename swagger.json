@@ -1,0 +1,318 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "API REST - Plataforma RutaIA",
+    "description": "Documentacion tecnica interactiva para la API REST de RutaIA. Sistema de recomendacion academica mediante busqueda semantica, embeddings y generacion aumentada por recuperacion (RAG).",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api/v1",
+      "description": "Servidor Local de Desarrollo"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Ingrese el token JWT obtenido en /auth/login con el prefijo Bearer."
+      }
+    },
+    "schemas": {
+      "LoginDTO": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "example": "admin@rutaia.edu" },
+          "password": { "type": "string", "example": "Password123!" }
+        }
+      },
+      "RegisterStudentDTO": {
+        "type": "object",
+        "required": ["name", "email", "password", "level", "areaOfInterest"],
+        "properties": {
+          "name": { "type": "string", "example": "Carlos Mendez" },
+          "email": { "type": "string", "example": "carlos.mendez@rutaia.edu" },
+          "password": { "type": "string", "example": "Password123!" },
+          "level": { "type": "string", "enum": ["PRINCIPIANTE", "INTERMEDIO", "AVANZADO"], "example": "PRINCIPIANTE" },
+          "areaOfInterest": { "type": "string", "example": "Desarrollo Web" }
+        }
+      },
+      "CourseDTO": {
+        "type": "object",
+        "required": ["title", "description", "category", "level", "durationHours"],
+        "properties": {
+          "title": { "type": "string", "example": "Arquitectura de Software con Microservicios" },
+          "description": { "type": "string", "example": "Aprende a diseñar sistemas distribuidos escalables con Docker, Node.js y patrones de diseño." },
+          "category": { "type": "string", "example": "Desarrollo Web" },
+          "level": { "type": "string", "enum": ["PRINCIPIANTE", "INTERMEDIO", "AVANZADO"], "example": "AVANZADO" },
+          "durationHours": { "type": "number", "example": 45 }
+        }
+      },
+      "AskQueryDTO": {
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "question": { "type": "string", "example": "Quiero aprender desarrollo web frontend con componentes reutilizables." }
+        }
+      },
+      "CreateRatingDTO": {
+        "type": "object",
+        "required": ["recommendationId", "score"],
+        "properties": {
+          "recommendationId": { "type": "string", "example": "65b1234567890abcdef12345" },
+          "score": { "type": "integer", "minimum": 1, "maximum": 5, "example": 5 },
+          "comment": { "type": "string", "example": "Excelente respuesta, me dio justo los cursos que necesitaba." }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Autenticacion"],
+        "summary": "Iniciar sesion para estudiantes y administradores",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginDTO" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Inicio de sesion exitoso con token JWT." },
+          "401": { "description": "Credenciales invalidas." }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": ["Autenticacion"],
+        "summary": "Registrar un nuevo estudiante (RF 01)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterStudentDTO" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Estudiante registrado exitosamente." },
+          "400": { "description": "Datos invalidos o correo electronico duplicado." }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Autenticacion"],
+        "summary": "Obtener el perfil del usuario autenticado",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Datos del perfil autenticado." },
+          "401": { "description": "Token no proporcionado o invalido." }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Autenticacion"],
+        "summary": "Cerrar la sesion activa",
+        "responses": {
+          "200": { "description": "Sesion cerrada correctamente." }
+        }
+      }
+    },
+    "/courses": {
+      "get": {
+        "tags": ["Cursos"],
+        "summary": "Consultar catalogo de cursos con filtros (RF 04)",
+        "parameters": [
+          { "name": "category", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por categoria" },
+          { "name": "level", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por nivel (Basico, Intermedio, Avanzado)" },
+          { "name": "status", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por estado" }
+        ],
+        "responses": {
+          "200": { "description": "Lista de cursos activos obtenida exitosamente." }
+        }
+      },
+      "post": {
+        "tags": ["Cursos"],
+        "summary": "Registrar un nuevo curso (RF 03 - Solo Admin)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CourseDTO" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Curso registrado exitosamente." },
+          "400": { "description": "Validacion fallida: duracion menor o igual a cero o faltan datos." },
+          "403": { "description": "Acceso denegado: solo administradores." }
+        }
+      }
+    },
+    "/courses/graph": {
+      "get": {
+        "tags": ["Cursos"],
+        "summary": "Obtener la estructura de nodos y aristas desde Qdrant para el Grafo del Administrador",
+        "responses": {
+          "200": { "description": "Grafo de conocimiento estructurado." }
+        }
+      }
+    },
+    "/courses/{id}": {
+      "get": {
+        "tags": ["Cursos"],
+        "summary": "Consultar curso por su identificador (RF 03)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Detalle del curso." },
+          "404": { "description": "Curso no encontrado." }
+        }
+      },
+      "put": {
+        "tags": ["Cursos"],
+        "summary": "Actualizar curso existente (RF 03 - Solo Admin)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CourseDTO" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Curso actualizado correctamente." }
+        }
+      },
+      "delete": {
+        "tags": ["Cursos"],
+        "summary": "Desactivar logicamente un curso (RF 03 - Solo Admin)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Curso desactivado logicamente." }
+        }
+      }
+    },
+    "/queries/ask": {
+      "post": {
+        "tags": ["Consultas Inteligentes (RAG)"],
+        "summary": "Enviar una pregunta en lenguaje natural al agente RAG (RF 06 al RF 14)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AskQueryDTO" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Recomendacion generada con fuentes y scores de similitud." },
+          "400": { "description": "La pregunta no puede estar vacia." }
+        }
+      }
+    },
+    "/queries/history": {
+      "get": {
+        "tags": ["Consultas Inteligentes (RAG)"],
+        "summary": "Obtener el historial de consultas del estudiante autenticado (RF 16)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Historial de consultas recuperado." }
+        }
+      }
+    },
+    "/ratings": {
+      "post": {
+        "tags": ["Calificaciones"],
+        "summary": "Calificar una recomendacion de la IA (RF 17)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRatingDTO" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Calificacion registrada exitosamente." },
+          "400": { "description": "Calificacion fuera del rango 1-5 o recomendacion ya calificada." }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["Estadisticas"],
+        "summary": "Obtener las 5 metricas globales de la plataforma (RF 18)",
+        "responses": {
+          "200": { "description": "Estadisticas consolidadas: total consultas, respondidas, sin resultados, promedio calificaciones y curso mas recomendado." }
+        }
+      }
+    },
+    "/metrics/student": {
+      "get": {
+        "tags": ["Estadisticas"],
+        "summary": "Obtener metricas de actividad del estudiante autenticado",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Metricas personales del estudiante." }
+        }
+      }
+    },
+    "/students": {
+      "get": {
+        "tags": ["Estudiantes"],
+        "summary": "Listar estudiantes registrados (RF 02)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Listado de estudiantes." }
+        }
+      }
+    },
+    "/students/{id}": {
+      "get": {
+        "tags": ["Estudiantes"],
+        "summary": "Consultar estudiante por identificador (RF 02)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Datos del estudiante." },
+          "404": { "description": "Estudiante no encontrado." }
+        }
+      }
+    },
+    "/students/{id}/history": {
+      "get": {
+        "tags": ["Estudiantes"],
+        "summary": "Consultar historial de recomendaciones de un estudiante especifico (RF 02)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Historial de consultas recuperado." }
+        }
+      }
+    }
+  }
+}
