@@ -140,35 +140,38 @@ export default class CourseService {
     /**
      * Alias para compatibilidad con CourseController.getAllCourses (RF 04)
      */
-    async getAllCourses(filters = {}, userRole = 'student') {
-        return this.getCourses(filters, userRole);
-    }
+    
 
     /**
-     * Consulta el catálogo de cursos activos con soporte de filtros (RF 04)
-     * Regla: Solo los cursos activos podrán mostrarse a estudiantes
+     * Consulta el catálogo de cursos activos con soporte de filtros (RF 04).
+     * @param {Object} filters - Filtros por category y level.
+     * @param {string} userRole - 'admin', 'student' o 'guest' (por defecto 'guest').
      */
-    async getCourses(filters = {}, userRole = 'student', limit = 50, page = 1) {
+    async getCourses(filters = {}, userRole = 'guest', limit = 50, page = 1) {
         const query = {};
 
-        // Filtro por categoría
+        // Filtros dinámicos por categoría y nivel (RF 04)
         if (filters.category && filters.category.trim() !== '') {
             query.category = filters.category.trim();
         }
 
-        // Filtro por nivel normalizado
         if (filters.level && filters.level.trim() !== '') {
             const normalized = this._normalizeLevel(filters.level);
             if (normalized) query.level = normalized;
         }
 
-        // RF 04: Mostrar únicamente cursos activos a estudiantes
+        // Regla RF 04: Visitantes ('guest'), estudiantes ('student') o usuarios sin rol
+        // SOLO pueden ver cursos activos y visibles.
         if (userRole !== 'admin') {
             query.isVisible = true;
             query.status = 'ACTIVO';
         }
 
         return await this.courseRepository.findWithPagination(query, limit, page);
+    }
+
+    async getAllCourses(filters = {}, userRole = 'guest') {
+        return this.getCourses(filters, userRole);
     }
 
     /**

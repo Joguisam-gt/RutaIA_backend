@@ -16,22 +16,24 @@ export class CourseController {
      */
     getAllCourses = async (req, res, next) => {
         try {
-            // Extraemos filtros opcionales de req.query según RF 04
             const { category, level, status } = req.query;
             const filters = { category, level, status };
 
-            const courses = await this.courseService.getAllCourses(filters);
+            // Si no hay token o no tiene rol, se trata como visitante anónimo ('guest')
+            const userRole = req.user?.role || 'guest';
+
+            const courses = await this.courseService.getAllCourses(filters, userRole);
 
             return res.status(200).json({
                 success: true,
                 count: courses.length,
+                roleDetected: userRole, // Opcional: útil para saber qué vista se entregó
                 data: courses
             });
         } catch (error) {
             next(error);
         }
     };
-
     /**
      * Consulta un curso por su ID (RF 03)
      * GET /api/v1/courses/:id
