@@ -5,8 +5,8 @@ import { ObjectId } from 'mongodb';
 import Database from '../config/database.js';
 import { environment } from '../config/environment.js';
 import { AppError } from '../errors/appError.js';
-import { BadRequestError } from '../errors/badRequestError.js';
-import { NotFoundError } from '../errors/notFoundError.js';
+import BadRequestError from '../errors/badRequestError.js';
+import NotFoundError from '../errors/notFoundError.js';
 
 // Niveles permitidos estrictamente por el RF 01
 const ALLOWED_LEVELS = Object.freeze(['Principiante', 'Intermedio', 'Avanzado']);

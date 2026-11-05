@@ -1,13 +1,11 @@
+// src/errors/badRequestError.js
 import AppError from './appError.js';
 
-/**
- * Excepción personalizada para errores de solicitud incorrecta (400 Bad Request).
- */
-export default class BadRequestError extends AppError {
-    /**
-     * @param {string} message - Mensaje descriptivo de la falla de validación.
-     */
-    constructor(message = 'Solicitud incorrecta o datos de entrada inválidos.') {
+export class BadRequestError extends AppError {
+    constructor(message = 'Solicitud incorrecta') {
         super(message, 400);
+        this.name = 'BadRequestError';
     }
 }
+
+export default BadRequestError;
