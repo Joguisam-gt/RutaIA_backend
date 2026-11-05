@@ -1,13 +1,14 @@
 // src/services/course.service.js
+import axios from 'axios';
 import courseRepositoryInstance from '../repositories/course.repository.js';
 import RecommendationService from './recommendation.service.js';
+import { environment } from '../config/environment.js';
 import AppError from '../errors/appError.js';
 import BadRequestError from '../errors/badRequestError.js';
 import NotFoundError from '../errors/notFoundError.js';
 import logger from '../utils/logger.js';
 
-// Niveles permitidos estrictamente por el RF 03
-const VALID_LEVELS = Object.freeze(['Básico', 'Intermedio', 'Avanzado']);
+const VALID_LEVELS = Object.freeze(['Básico', 'Intermedio', 'Avanzado', 'PRINCIPIANTE', 'INTERMEDIO', 'AVANZADO']);
 
 export default class CourseService {
     constructor(
@@ -18,32 +19,24 @@ export default class CourseService {
         this.recommendationService = recommendationService;
     }
 
-    /**
-     * Valida las reglas de negocio de un curso antes de persistirlo
-     * @private
-     */
     _validateCourseData(data) {
         const title = (data.title || data.name || '').trim();
         const description = (data.description || '').trim();
         const duration = Number(data.durationHours || data.duration);
 
-        // Regla: No podrán registrarse cursos sin nombre o descripción
         if (!title) {
             throw new BadRequestError('El nombre o título del curso es obligatorio.');
         }
         if (!description) {
             throw new BadRequestError('La descripción del curso es obligatoria.');
         }
-
-        // Regla: La duración de un curso deberá ser mayor que cero
         if (isNaN(duration) || duration <= 0) {
             throw new BadRequestError('La duración del curso deberá ser mayor que cero.');
         }
 
-        // RF 03: Aceptar los niveles Básico, Intermedio y Avanzado
         const normalizedLevel = this._normalizeLevel(data.level);
         if (!normalizedLevel) {
-            throw new BadRequestError(`Nivel inválido. Los niveles permitidos son: ${VALID_LEVELS.join(', ')}.`);
+            throw new BadRequestError('Nivel inválido. Los niveles permitidos son: Básico, Intermedio, Avanzado.');
         }
 
         return {
@@ -55,29 +48,21 @@ export default class CourseService {
         };
     }
 
-    /**
-     * Normaliza los niveles tolerando acentos y mayúsculas/minúsculas
-     * @private
-     */
     _normalizeLevel(level) {
         if (!level) return null;
-        const clean = level.trim().toLowerCase();
-        if (clean === 'básico' || clean === 'basico') return 'Básico';
-        if (clean === 'intermedio') return 'Intermedio';
-        if (clean === 'avanzado') return 'Avanzado';
+        const clean = level.trim().toUpperCase();
+        if (clean === 'BÁSICO' || clean === 'BASICO' || clean === 'PRINCIPIANTE') return 'Básico';
+        if (clean === 'INTERMEDIO') return 'Intermedio';
+        if (clean === 'AVANZADO') return 'Avanzado';
         return null;
     }
 
-    /**
-     * Registra un curso cumpliendo todas las reglas del RF 03 y coordina con n8n/Qdrant
-     */
     async createCourse(courseDto, file = null) {
-        // 1. Validar reglas de negocio estrictas
         const validated = this._validateCourseData(courseDto);
 
         const initialCourseData = {
             title: validated.title,
-            name: validated.title, // Compatibilidad con endpoints
+            name: validated.title,
             description: validated.description,
             category: validated.category,
             level: validated.level,
@@ -90,11 +75,9 @@ export default class CourseService {
             updatedAt: new Date()
         };
 
-        // 2. Persistir en base de datos
         const createdCourse = await this.courseRepository.create(initialCourseData);
         logger.info(`Curso '${createdCourse.title}' creado exitosamente con ID: ${createdCourse._id}`);
 
-        // 3. Si se adjuntó PDF, procesarlo hacia n8n/Qdrant
         if (file && file.buffer) {
             if (file.mimetype !== 'application/pdf') {
                 throw new BadRequestError('El archivo adjunto debe ser de tipo PDF (application/pdf).');
@@ -113,10 +96,9 @@ export default class CourseService {
                         graphNodeId: createdCourse.graphNodeId
                     }
                 );
-                logger.info(`Ingesta vectorial finalizada en n8n para el curso: ${createdCourse._id}`);
+                logger.info(`Ingesta vectorial finalizada para el curso: ${createdCourse._id}`);
             } catch (error) {
-                logger.error(`Fallo en la ingesta vectorial para el curso ID: ${createdCourse._id}`, error.message);
-                // No rompemos la transacción completa, pero dejamos registro
+                logger.error(`Fallo en la ingesta vectorial para el curso ID: ${createdCourse._id}: ${error.message}`);
                 await this.courseRepository.updateById(createdCourse._id, {
                     ingestError: error.message
                 });
@@ -126,9 +108,6 @@ export default class CourseService {
         return createdCourse;
     }
 
-    /**
-     * Obtiene un curso por ID garantizando existencia (RF 03)
-     */
     async getCourseById(courseId) {
         const course = await this.courseRepository.findById(courseId);
         if (!course) {
@@ -137,20 +116,13 @@ export default class CourseService {
         return course;
     }
 
-    /**
-     * Alias para compatibilidad con CourseController.getAllCourses (RF 04)
-     */
-    
+    async getAllCourses(filters = {}, userRole = 'guest') {
+        return this.getCourses(filters, userRole);
+    }
 
-    /**
-     * Consulta el catálogo de cursos activos con soporte de filtros (RF 04).
-     * @param {Object} filters - Filtros por category y level.
-     * @param {string} userRole - 'admin', 'student' o 'guest' (por defecto 'guest').
-     */
     async getCourses(filters = {}, userRole = 'guest', limit = 50, page = 1) {
         const query = {};
 
-        // Filtros dinámicos por categoría y nivel (RF 04)
         if (filters.category && filters.category.trim() !== '') {
             query.category = filters.category.trim();
         }
@@ -160,8 +132,6 @@ export default class CourseService {
             if (normalized) query.level = normalized;
         }
 
-        // Regla RF 04: Visitantes ('guest'), estudiantes ('student') o usuarios sin rol
-        // SOLO pueden ver cursos activos y visibles.
         if (userRole !== 'admin') {
             query.isVisible = true;
             query.status = 'ACTIVO';
@@ -170,17 +140,9 @@ export default class CourseService {
         return await this.courseRepository.findWithPagination(query, limit, page);
     }
 
-    async getAllCourses(filters = {}, userRole = 'guest') {
-        return this.getCourses(filters, userRole);
-    }
-
-    /**
-     * Actualiza información de un curso validando existencia y reglas de negocio
-     */
     async updateCourse(courseId, updateDto) {
         await this.getCourseById(courseId);
 
-        // Si se actualizan campos críticos, validar reglas
         if (updateDto.duration !== undefined || updateDto.durationHours !== undefined) {
             const dur = Number(updateDto.durationHours ?? updateDto.duration);
             if (isNaN(dur) || dur <= 0) {
@@ -191,7 +153,7 @@ export default class CourseService {
         if (updateDto.level) {
             const normalized = this._normalizeLevel(updateDto.level);
             if (!normalized) {
-                throw new BadRequestError(`Nivel inválido. Los niveles permitidos son: ${VALID_LEVELS.join(', ')}.`);
+                throw new BadRequestError('Nivel inválido. Los niveles permitidos son: Básico, Intermedio, Avanzado.');
             }
             updateDto.level = normalized;
         }
@@ -205,14 +167,9 @@ export default class CourseService {
         return updatedCourse;
     }
 
-    /**
-     * Desactiva un curso lógicamente (RF 03 y Reglas de Negocio)
-     * Regla: No se borra físicamente para preservar la integridad de las recomendaciones
-     */
     async deleteCourse(courseId) {
         await this.getCourseById(courseId);
 
-        // Desactivación lógica
         const deactivatedCourse = await this.courseRepository.updateById(courseId, {
             isVisible: false,
             status: 'INACTIVO',
@@ -221,5 +178,70 @@ export default class CourseService {
 
         logger.info(`Curso ID: ${courseId} desactivado lógicamente del catálogo.`);
         return deactivatedCourse;
+    }
+
+    /**
+     * Obtiene la estructura de nodos y aristas a partir de Qdrant
+     * para la visualizacion del Grafo de Administrador
+     */
+    async getCourseGraph() {
+        const qdrantUrl = (environment.qdrantUrl || 'http://localhost:6333').replace(/\/$/, '');
+        
+        const response = await axios.post(`${qdrantUrl}/collections/courses/points/scroll`, {
+            limit: 100,
+            with_payload: true,
+            with_vector: false
+        });
+
+        const points = response.data?.result?.points || [];
+        const nodes = [];
+        const edges = [];
+        const categoriesSeen = new Set();
+
+        points.forEach((point) => {
+            const course = point.payload || {};
+            const category = course.category || 'General';
+            const catNodeId = `cat_${category.toLowerCase().replace(/\s+/g, '_')}`;
+
+            if (!categoriesSeen.has(category)) {
+                categoriesSeen.add(category);
+                nodes.push({
+                    id: catNodeId,
+                    label: category,
+                    type: 'category',
+                    group: category,
+                    size: 25
+                });
+            }
+
+            const courseNodeId = `course_${course.courseId || point.id}`;
+            nodes.push({
+                id: courseNodeId,
+                label: course.title,
+                level: course.level,
+                durationHours: course.durationHours,
+                type: 'course',
+                group: category,
+                size: 15
+            });
+
+            edges.push({
+                id: `edge_${catNodeId}_${courseNodeId}`,
+                source: catNodeId,
+                target: courseNodeId,
+                relationship: 'CONTIENE'
+            });
+        });
+
+        return {
+            nodes,
+            edges,
+            summary: {
+                totalNodes: nodes.length,
+                totalEdges: edges.length,
+                totalCategories: categoriesSeen.size,
+                totalCourses: points.length
+            }
+        };
     }
 }
