@@ -1,21 +1,43 @@
+// src/routes/student.routes.js
 import { Router } from 'express';
-import StudentController from '../controllers/student.controller.js';
-import StudentService from '../services/student.service.js';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
+import studentController from '../controllers/student.controller.js';
+import { AuthMiddleware } from '../middlewares/auth.middleware.js';
 
-const router = Router();
+class StudentRoutes {
+    constructor() {
+        this.router = Router();
+        this.initializeRoutes();
+    }
 
-// 1. Instanciar el servicio
-const studentService = new StudentService();
+    initializeRoutes() {
+        /**
+         * @route   GET /api/v1/students/me
+         * @desc    Obtiene el perfil del estudiante autenticado
+         */
+        this.router.get('/me', AuthMiddleware.authenticate, studentController.getProfile);
 
-// 2. Inyectar el servicio en el controlador
-const studentController = new StudentController(studentService);
+        /**
+         * @route   GET /api/v1/students
+         * @desc    Listar estudiantes registrados (RF 02)
+         * @access  Privado (Admin o Estudiantes autenticados)
+         */
+        this.router.get('/', AuthMiddleware.authenticate, studentController.getAllStudents);
 
-// 3. Definir rutas (sin duplicados)
-router.get('/my-courses', authMiddleware, studentController.getMyCourses);
-router.get('/profile', authMiddleware, studentController.getProfile);
-router.get('/metrics', authMiddleware, studentController.getMetrics);
-router.get('/certificates', authMiddleware, studentController.getCertificates);
-router.get('/wishlist', authMiddleware, studentController.getWishlist);
+        /**
+         * @route   GET /api/v1/students/:id
+         * @desc    Consultar estudiante por identificador (RF 02)
+         */
+        this.router.get('/:id', AuthMiddleware.authenticate, studentController.getStudentById);
 
-export default router;
+        /**
+         * @route   GET /api/v1/students/:id/history
+         * @desc    Consultar el historial de un estudiante (RF 02)
+         */
+        this.router.get('/:id/history', AuthMiddleware.authenticate, studentController.getStudentHistory);
+
+        // Rutas complementarias UI
+        this.router.get('/my-courses', AuthMiddleware.authenticate, studentController.getMyCourses);
+    }
+}
+
+export default new StudentRoutes().router;
