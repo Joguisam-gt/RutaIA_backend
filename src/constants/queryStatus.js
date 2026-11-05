@@ -1,14 +1,13 @@
-// Principio SRP (Single Responsibility Principle): Encapsula las constantes de estado de las consultas procesadas por la IA y el backend proxy.
+// src/constants/queryStatus.js
 
 /**
- * Diccionario inmutable con los estados posibles de una consulta registrada en la base de datos.
+ * Estados oficiales de las consultas según RF 07 y Reglas de Negocio de RutaIA.
  */
 export const queryStatus = Object.freeze({
-    PENDING: 'PENDING',
-    PROCESSING: 'PROCESSING',
-    COMPLETED: 'COMPLETED',
-    FAILED: 'FAILED'
+    PENDING: 'Pendiente',
+    ANSWERED: 'Respondida',
+    NO_RESULTS: 'Sin resultados',
+    ERROR: 'Error'
 });
 
-// Exportación por defecto para mantener soporte con sintaxis: import queryStatus from '../constants/queryStatus.js';
 export default queryStatus;
