@@ -25,18 +25,18 @@ export default class CourseService {
         const duration = Number(data.durationHours || data.duration);
 
         if (!title) {
-            throw new BadRequestError('El nombre o título del curso es obligatorio.');
+            throw new BadRequestError('El nombre o titulo del curso es obligatorio.');
         }
         if (!description) {
-            throw new BadRequestError('La descripción del curso es obligatoria.');
+            throw new BadRequestError('La descripcion del curso es obligatoria.');
         }
         if (isNaN(duration) || duration <= 0) {
-            throw new BadRequestError('La duración del curso deberá ser mayor que cero.');
+            throw new BadRequestError('La duracion del curso debera ser mayor que cero.');
         }
 
         const normalizedLevel = this._normalizeLevel(data.level);
         if (!normalizedLevel) {
-            throw new BadRequestError('Nivel inválido. Los niveles permitidos son: Básico, Intermedio, Avanzado.');
+            throw new BadRequestError('Nivel invalido. Los niveles permitidos son: Basico, Intermedio, Avanzado.');
         }
 
         return {
@@ -146,14 +146,14 @@ export default class CourseService {
         if (updateDto.duration !== undefined || updateDto.durationHours !== undefined) {
             const dur = Number(updateDto.durationHours ?? updateDto.duration);
             if (isNaN(dur) || dur <= 0) {
-                throw new BadRequestError('La duración del curso deberá ser mayor que cero.');
+                throw new BadRequestError('La duracion del curso debera ser mayor que cero.');
             }
         }
 
         if (updateDto.level) {
             const normalized = this._normalizeLevel(updateDto.level);
             if (!normalized) {
-                throw new BadRequestError('Nivel inválido. Los niveles permitidos son: Básico, Intermedio, Avanzado.');
+                throw new BadRequestError('Nivel invalido. Los niveles permitidos son: Basico, Intermedio, Avanzado.');
             }
             updateDto.level = normalized;
         }
@@ -176,72 +176,85 @@ export default class CourseService {
             updatedAt: new Date()
         });
 
-        logger.info(`Curso ID: ${courseId} desactivado lógicamente del catálogo.`);
+        logger.info(`Curso ID: ${courseId} desactivado logicamente del catalogo.`);
         return deactivatedCourse;
     }
 
     /**
-     * Obtiene la estructura de nodos y aristas a partir de Qdrant
-     * para la visualizacion del Grafo de Administrador
+     * Obtiene la estructura de nodos y aristas a partir de Qdrant (RF 05 y Grafo)
+     * Resiliente a caidas de base de datos vectorial para no tumbar la API
      */
     async getCourseGraph() {
-        const qdrantUrl = (environment.qdrantUrl || 'http://localhost:6333').replace(/\/$/, '');
-        
-        const response = await axios.post(`${qdrantUrl}/collections/courses/points/scroll`, {
-            limit: 100,
-            with_payload: true,
-            with_vector: false
-        });
+        try {
+            const qdrantUrl = (environment.qdrantUrl || 'http://localhost:6333').replace(/\/$/, '');
+            
+            let points = [];
+            
+            try {
+                // Intento de obtener datos vectoriales con limite de tiempo
+                const response = await axios.post(`${qdrantUrl}/collections/courses/points/scroll`, {
+                    limit: 100,
+                    with_payload: true,
+                    with_vector: false
+                }, { timeout: 3000 });
+                
+                points = response.data?.result?.points || [];
+            } catch (qdrantError) {
+                logger.warn(`[Qdrant Graph]: No se pudo conectar a Qdrant en ${qdrantUrl}. Retornando grafo sin documentos vectoriales.`);
+            }
 
-        const points = response.data?.result?.points || [];
-        const nodes = [];
-        const edges = [];
-        const categoriesSeen = new Set();
+            const nodes = [];
+            const edges = [];
+            const categoriesSeen = new Set();
 
-        points.forEach((point) => {
-            const course = point.payload || {};
-            const category = course.category || 'General';
-            const catNodeId = `cat_${category.toLowerCase().replace(/\s+/g, '_')}`;
+            points.forEach((point) => {
+                const course = point.payload || {};
+                const category = course.category || 'General';
+                const catNodeId = `cat_${category.toLowerCase().replace(/\s+/g, '_')}`;
 
-            if (!categoriesSeen.has(category)) {
-                categoriesSeen.add(category);
+                if (!categoriesSeen.has(category)) {
+                    categoriesSeen.add(category);
+                    nodes.push({
+                        id: catNodeId,
+                        label: category,
+                        type: 'category',
+                        group: category,
+                        size: 25
+                    });
+                }
+
+                const courseNodeId = `course_${course.courseId || point.id}`;
                 nodes.push({
-                    id: catNodeId,
-                    label: category,
-                    type: 'category',
+                    id: courseNodeId,
+                    label: course.title || 'Curso Indexado',
+                    level: course.level || 'INTERMEDIO',
+                    durationHours: course.durationHours || 20,
+                    type: 'course',
                     group: category,
-                    size: 25
+                    size: 15
                 });
-            }
 
-            const courseNodeId = `course_${course.courseId || point.id}`;
-            nodes.push({
-                id: courseNodeId,
-                label: course.title,
-                level: course.level,
-                durationHours: course.durationHours,
-                type: 'course',
-                group: category,
-                size: 15
+                edges.push({
+                    id: `edge_${catNodeId}_${courseNodeId}`,
+                    source: catNodeId,
+                    target: courseNodeId,
+                    relationship: 'CONTIENE'
+                });
             });
 
-            edges.push({
-                id: `edge_${catNodeId}_${courseNodeId}`,
-                source: catNodeId,
-                target: courseNodeId,
-                relationship: 'CONTIENE'
-            });
-        });
-
-        return {
-            nodes,
-            edges,
-            summary: {
-                totalNodes: nodes.length,
-                totalEdges: edges.length,
-                totalCategories: categoriesSeen.size,
-                totalCourses: points.length
-            }
-        };
+            return {
+                nodes,
+                edges,
+                summary: {
+                    totalNodes: nodes.length,
+                    totalEdges: edges.length,
+                    totalCategories: categoriesSeen.size,
+                    totalCourses: points.length
+                }
+            };
+        } catch (error) {
+            logger.error('[CourseService]: Fallo critico armando el grafo de conocimiento:', error.message);
+            throw new AppError('Error interno construyendo el grafo de conocimiento.', 500);
+        }
     }
 }
