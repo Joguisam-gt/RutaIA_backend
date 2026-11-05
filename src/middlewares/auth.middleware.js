@@ -1,75 +1,116 @@
-// src/middlewares/auth.middleware.js
 import jwt from 'jsonwebtoken';
 import { environment } from '../config/environment.js';
-import { AppError } from '../errors/appError.js';
+import AppErrorImport from '../errors/appError.js';
+
+// Compatibilidad de importación resiliente para AppError (soporta export default y export named)
+const AppError = AppErrorImport?.AppError || AppErrorImport || Error;
+
+// Resolución segura del secreto JWT ante cualquier variación en config/environment o .env
+const getJwtSecret = () => {
+    const secret = environment?.jwtSecret || environment?.jwt?.secret || process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error('Configuración crítica faltante: El secreto JWT (JWT_SECRET) no está definido.');
+    }
+    return secret;
+};
+
+// Extractor reutilizable de token Bearer
+const extractBearerToken = (authHeader) => {
+    if (!authHeader || typeof authHeader !== 'string') return null;
+
+    const match = authHeader.match(/^Bearer\s+(\S+)$/i);
+    if (!match) return null;
+
+    const token = match[1].trim();
+
+    // Filtra valores inválidos comúnmente enviados por Axios/LocalStorage del frontend
+    if (token === 'null' || token === 'undefined' || token === '') {
+        return null;
+    }
+
+    return token;
+};
 
 export class AuthMiddleware {
     /**
+     * Autenticación Estricta:
      * Intercepta la petición y valida que el JWT sea legítimo y vigente.
-     * Inyecta el payload en req.user.
+     * Si no hay token o es inválido, rechaza con 401.
      */
     static authenticate = (req, res, next) => {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader) {
-            return next(new AppError('No autorizado. Token no proporcionado.', 401));
-        }
-
-        const match = authHeader.match(/^Bearer\s+(\S+)$/i);
-        if (!match) {
-            return next(new AppError('Formato de autorización inválido. Debe ser: Bearer <token>.', 401));
-        }
-
-        const token = match[1];
-
         try {
-            const decoded = jwt.verify(token, environment.jwtSecret);
+            const token = extractBearerToken(req.headers.authorization);
+
+            if (!token) {
+                return next(new AppError('No autorizado. Token no proporcionado o formato inválido.', 401));
+            }
+
+            const secret = getJwtSecret();
+            const decoded = jwt.verify(token, secret);
+
             req.user = decoded;
-            next();
+            return next();
         } catch (error) {
             if (error.name === 'TokenExpiredError') {
                 return next(new AppError('La sesión ha expirado. Por favor, inicia sesión nuevamente.', 401));
             }
-            return next(new AppError('Token de autenticación inválido.', 401));
+            if (error.name === 'JsonWebTokenError') {
+                return next(new AppError('Token de autenticación inválido o corrupto.', 401));
+            }
+            return next(error);
         }
     };
 
     /**
-     * Autenticación opcional: inyecta req.user si el token es válido,
-     * pero no bloquea la petición si no se proporciona (útil para visitantes anónimos).
+     * Autenticación Opcional (Guest Friendly):
+     * Si viene un token válido, decodifica y asigna req.user.
+     * Si NO viene token, viene "Bearer null/undefined" o está expirado,
+     * deja req.user = null y permite el paso SIN responder 401.
      */
     static optionalAuthenticate = (req, res, next) => {
-        const authHeader = req.headers.authorization;
+        req.user = null; // Garantiza un estado predeterminado limpio
 
-        if (authHeader) {
-            const match = authHeader.match(/^Bearer\s+(\S+)$/i);
-            if (match) {
-                try {
-                    const decoded = jwt.verify(match[1], environment.jwtSecret);
-                    req.user = decoded;
-                } catch {
-                    // Token inválido o expirado; se continúa como anónimo de forma intencional
-                }
-            }
+        const token = extractBearerToken(req.headers.authorization);
+
+        if (!token) {
+            return next();
         }
-        next();
+
+        try {
+            const secret = getJwtSecret();
+            const decoded = jwt.verify(token, secret);
+            req.user = decoded;
+        } catch {
+            // El token es inválido, falso o expiró: se degrada a invitado (guest)
+            req.user = null;
+        }
+
+        return next();
     };
 
     /**
-     * Middleware de autorización basado en Roles (RBAC).
-     * @param  {...string} roles - Roles permitidos ('student', 'admin')
+     * Control de Acceso Basado en Roles (RBAC):
+     * @param  {...string} roles - Roles permitidos ('student', 'admin', etc.)
      */
     static authorize = (...roles) => {
         return (req, res, next) => {
-            if (!req.user || !roles.includes(req.user.role)) {
+            if (!req.user) {
+                return next(new AppError('No autorizado. Se requiere iniciar sesión.', 401));
+            }
+
+            const userRole = String(req.user.role || '').toLowerCase();
+            const allowedRoles = roles.map(r => String(r).toLowerCase());
+
+            if (!allowedRoles.includes(userRole)) {
                 return next(new AppError('Acceso denegado. Permisos insuficientes.', 403));
             }
-            next();
+
+            return next();
         };
     };
 }
 
-// Exportaciones nombradas de conveniencia para retrocompatibilidad
+// Exportaciones de conveniencia para retrocompatibilidad
 export const authMiddleware = AuthMiddleware.authenticate;
 export const optionalAuthMiddleware = AuthMiddleware.optionalAuthenticate;
 export const authorize = AuthMiddleware.authorize;
