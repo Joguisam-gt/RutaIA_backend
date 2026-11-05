@@ -1,7 +1,8 @@
 // src/app.js
 import express from 'express';
 import cors from 'cors';
-import { createRequire } from 'module';
+import fs from 'fs';
+import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import rateLimit from 'express-rate-limit';
 
@@ -9,20 +10,22 @@ import router from './routes/index.js';
 import errorHandler from './middlewares/errorHandler.middleware.js';
 import logger from './utils/logger.js';
 
-// Carga compatible de JSON en modulos ES
-const require = createRequire(import.meta.url);
+// Carga robusta de swagger.json desde la raiz del proyecto usando process.cwd()
 let swaggerDocument = null;
 try {
-    swaggerDocument = require('../swagger.json');
+    const swaggerPath = path.resolve(process.cwd(), 'swagger.json');
+    if (fs.existsSync(swaggerPath)) {
+        swaggerDocument = JSON.parse(fs.readFileSync(swaggerPath, 'utf8'));
+    } else {
+        logger.warn('[Swagger]: El archivo swagger.json no existe en la raiz del proyecto.');
+    }
 } catch (error) {
-    logger.warn('[Swagger]: No se encontro swagger.json en la raiz del proyecto.');
+    logger.warn('[Swagger]: No fue posible parsear el archivo swagger.json.');
 }
 
 const app = express();
 
-
 // 1. CONFIGURACION DE SEGURIDAD Y CORS
-
 const allowedOrigins = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
@@ -32,7 +35,7 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permite solicitudes sin origen (como Postman o Swagger) o en la lista permitida
+        // Permite solicitudes sin origen (como Postman o curl) o en la lista permitida
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
@@ -44,16 +47,14 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-
 // 2. PARSERS Y RATE LIMITING (Requerimiento Tecnico)
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Proteccion contra ataques de fuerza bruta y saturacion de peticiones
+// Proteccion contra saturacion de peticiones (Rate Limit)
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 300, // Limite de 300 peticiones por ventana por IP
+    max: 300, // Maximo 300 peticiones por ventana por IP
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -64,16 +65,15 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-
-// 3. DOCUMENTACION SWAGGER UI
+// 3. DOCUMENTACION SWAGGER UI INTERACTIVA
 if (swaggerDocument) {
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
         customSiteTitle: 'RutaIA - Documentacion API REST',
-        customCss: '.swagger-ui .topbar { display: none }' // Oculta barra superior generica
+        customCss: '.swagger-ui .topbar { display: none }'
     }));
 }
 
-// Ruta basica de verificacion de estado
+// Ruta basica de verificacion de salud del servidor
 app.get('/health', (req, res) => {
     return res.status(200).json({
         success: true,
@@ -94,9 +94,7 @@ app.use((req, res) => {
     });
 });
 
-
 // 6. MANEJADOR GLOBAL DE ERRORES (Requerimiento Tecnico)
-
 app.use(errorHandler);
 
 export default app;
