@@ -10,32 +10,27 @@ class CourseRoutes {
     }
 
     initializeRoutes() {
-        /**
-         * @route   GET /api/v1/courses
-         * @desc    Consulta el catálogo con filtros (RF 04). 
-         *          Público/Estudiante: solo activos. Admin: todos.
-         */
+        // Catalogo publico con filtros opcionales
         this.router.get(
             '/', 
             AuthMiddleware.optionalAuthenticate, 
             courseController.getAllCourses
         );
 
-        /**
-         * @route   GET /api/v1/courses/:id
-         * @desc    Obtiene el detalle de un curso específico (RF 03)
-         */
+        // Endpoint de Grafo (Debe registrarse ANTES de /:id para evitar colisiones)
+        this.router.get(
+            '/graph', 
+            courseController.getCourseGraph
+        );
+
+        // Detalle de un curso
         this.router.get(
             '/:id', 
             AuthMiddleware.optionalAuthenticate, 
             courseController.getCourseById
         );
 
-        /**
-         * @route   POST /api/v1/courses
-         * @desc    Crea un nuevo curso (RF 03)
-         * @access  Privado (Solo Administradores)
-         */
+        // Operaciones administrativas
         this.router.post(
             '/', 
             AuthMiddleware.authenticate, 
@@ -43,11 +38,6 @@ class CourseRoutes {
             courseController.createCourse
         );
 
-        /**
-         * @route   PUT /api/v1/courses/:id
-         * @desc    Actualiza la información de un curso (RF 03)
-         * @access  Privado (Solo Administradores)
-         */
         this.router.put(
             '/:id', 
             AuthMiddleware.authenticate, 
@@ -55,11 +45,6 @@ class CourseRoutes {
             courseController.updateCourse
         );
 
-        /**
-         * @route   DELETE /api/v1/courses/:id
-         * @desc    Desactiva lógicamente un curso (RF 03 y Reglas de Negocio)
-         * @access  Privado (Solo Administradores)
-         */
         this.router.delete(
             '/:id', 
             AuthMiddleware.authenticate, 
